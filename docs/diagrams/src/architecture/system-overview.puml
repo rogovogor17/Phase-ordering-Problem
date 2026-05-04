@@ -1,0 +1,15 @@
+@startuml system-overview
+!include ../_theme_light.puml
+
+title System Overview
+
+actor User
+rectangle "Web Application" as web
+rectangle "Database" as db
+
+User -> web: Query
+web -> db: SELECT
+db --> web: Data
+web --> User: Answer
+
+@enduml

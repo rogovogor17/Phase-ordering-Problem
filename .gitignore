@@ -3,6 +3,7 @@ build/
 temp/
 bin/
 lib/
+.gitignore
 
 docs/html/
 docs/latex/
