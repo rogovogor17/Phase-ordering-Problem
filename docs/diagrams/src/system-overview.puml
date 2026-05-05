@@ -55,7 +55,19 @@ class IRAnalyzer {
 }
 
 struct IRMetrics {
-
+    totalInstructions : int
+    totalBasicBlock : int
+    totalFunctions : int
+    avgBasicBlock : double
+    maxBlockDepth : int
+    memoryOps : int
+    branchOps : int
+    callOps : int
+    arithmeticOps : int
+    executionTimeMs : double
+    --
+    + cost() : double
+    + toString() : std::string
 }
 
 class SequenceGenerator {
@@ -102,11 +114,13 @@ HillClimbing <.. SequenceGenerator : generateFromIR
 
 ' Association:
 PhaseOrderingSolver --> "0..*" IAlgorithm : interface
+PhaseOrderingSolver --> "0..*" IRAnalyzer
 
 ' Enum/Struct dependencies:
 PhaseOrderingSolver ..> SolverConfig
 IAlgorithm ..> AlgoContext
 IAlgorithm ..> AlgoResult
+IRAnalyzer ..> IRMetrics
 
 ' --- Notes ---
 
@@ -116,7 +130,7 @@ note right of PhaseOrderingSolver
     Evaluates IRMetrics for specific optimization sequence
 end note
 
-note right of SolverConfig
+note bottom of SolverConfig
     <b>Configuration</b>
     1. Maximum quantity of epochs
     2. Dump detail
@@ -124,7 +138,7 @@ note right of SolverConfig
     4. Path to LLVM binary file
 end note
 
-note right of IAlgorithm
+note bottom of IAlgorithm
     <b>Interface</b>
     All methods are clearly virtual (= 0).
     Virtual destructor must be!
@@ -166,6 +180,18 @@ end note
 note bottom of SequenceGenerator
     <b>Fabric</b>
     Generates different optimization sequences.
+end note
+
+note top of IRAnalyzer
+    <b>Analysis</b>
+    Get LLVM IR and run analysis to collect metrics.
+    Can calculate normalized cost of given metrics.
+end note
+
+note bottom of IRMetrics
+    <b>Metrics</b>
+    The meaningful characteristics of LLVM IR that used
+    for searching the best optimization sequence.
 end note
 
 @enduml
