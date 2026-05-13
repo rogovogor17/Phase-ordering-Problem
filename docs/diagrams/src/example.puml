@@ -1,0 +1,604 @@
+@startuml phase-ordering-architecture
+!include ../include/_theme_light.puml
+
+title Phase-Ordering Architecture
+
+' ============================================================
+' DESIGN PATTERNS USED:
+' 1. Strategy  - IAlgorithm, ICostModel
+' 2. Facade    - LLVMFacade
+' 3. Factory   - AlgorithmFactory, CostModelFactory, EvaluatorFactory
+' 4. Builder   - SolverBuilder
+' 5. DTO/Value - AlgoContext, AlgoResult, IRMetrics, OptSequence
+' ============================================================
+
+' =========================
+' CORE STRATEGY INTERFACES
+' =========================
+
+interface IAlgorithm {
+    + {abstract} run(ctx : const AlgoContext&) : AlgoResult
+}
+
+interface IEvaluator {
+    + {abstract} evaluate(seq : const OptSequence&) : EvaluationResult
+}
+
+interface ICostModel {
+    + {abstract} score(metrics : const IRMetrics&,
+                       baseline : const IRMetrics&) : double
+    + {abstract} isBetter(a : double, b : double) : bool
+}
+
+' =========================
+' CORE DATA STRUCTURES
+' =========================
+
+struct AlgoContext {
+    baselineSequence : OptSequence
+    baselineMetrics : IRMetrics
+    evaluator : IEvaluator&
+    costModel : ICostModel&
+    maxEvaluations : int
+    verbose : bool
+}
+
+struct AlgoResult {
+    bestSequence : OptSequence
+    bestMetrics : IRMetrics
+    bestScore : double
+    evaluationsUsed : int
+    improvementRatio : double
+    log : std::string
+}
+
+struct EvaluationResult {
+    sequence : OptSequence
+    optimizedIR : std::string
+    metrics : IRMetrics
+    success : bool
+    errorMessage : std::string
+}
+
+struct IRMetrics {
+    totalInstructions : int
+    totalBasicBlocks : int
+    totalFunctions : int
+    avgBasicBlockSize : double
+    maxBlockDepth : int
+    memoryOps : int
+    branchOps : int
+    callOps : int
+    arithmeticOps : int
+    executionTimeMs : double
+    --
+    + toString() : std::string
+}
+
+class OptSequence {
+    - passes_ : std::vector<std::string>
+    --
+    + OptSequence()
+    + add(pass : const std::string&) : void
+    + removeAt(index : int) : void
+    + size() : int
+    + empty() : bool
+    + passes() : const std::vector<std::string>&
+    + toString() : std::string
+}
+
+' =========================
+' SOLVER / ORCHESTRATOR
+' =========================
+
+class PhaseOrderingSolver {
+    - algorithm_ : std::unique_ptr<IAlgorithm>
+    - evaluator_ : std::unique_ptr<IEvaluator>
+    - costModel_ : std::unique_ptr<ICostModel>
+    - config_ : SolverConfig
+    --
+    + PhaseOrderingSolver(algorithm : std::unique_ptr<IAlgorithm>,
+                          evaluator : std::unique_ptr<IEvaluator>,
+                          costModel : std::unique_ptr<ICostModel>,
+                          config : SolverConfig)
+    + solve(sourceFile : const std::string&) : AlgoResult
+    + solveIR(ir : const std::string&) : AlgoResult
+    + evaluate(seq : const OptSequence&) : EvaluationResult
+    + config() : const SolverConfig&
+}
+
+struct SolverConfig {
+    sourceFile : std::string
+    inputIR : std::string
+    maxEvaluations : int
+    sequenceLength : int
+    verbose : bool
+    measureRuntime : bool
+    llvmBinPath : std::string
+    algorithmType : AlgorithmType
+    costModelType : CostModelType
+}
+
+enum AlgorithmType {
+    RandomSearch
+    HillClimbing
+    SimulatedAnnealing
+}
+
+enum CostModelType {
+    Weighted
+    InstructionCount
+    Runtime
+}
+
+' =========================
+' ALGORITHMS: STRATEGY
+' =========================
+
+class RandomSearch {
+    - sequenceLength_ : int
+    --
+    + RandomSearch(sequenceLength : int)
+    + run(ctx : const AlgoContext&) : AlgoResult
+}
+
+class HillClimbing {
+    - maxNoImprove_ : int
+    - mutationStrength_ : int
+    --
+    + HillClimbing(maxNoImprove : int,
+                   mutationStrength : int)
+    + run(ctx : const AlgoContext&) : AlgoResult
+}
+
+class SimulatedAnnealing {
+    - startTemperature_ : double
+    - coolingRate_ : double
+    --
+    + SimulatedAnnealing(startTemperature : double,
+                         coolingRate : double)
+    + run(ctx : const AlgoContext&) : AlgoResult
+}
+
+IAlgorithm <|.. RandomSearch
+IAlgorithm <|.. HillClimbing
+IAlgorithm <|.. SimulatedAnnealing
+
+' =========================
+' SEQUENCE GENERATION
+' =========================
+
+class SequenceGenerator {
+    + generateRandom(length : int) : OptSequence
+    + generateO1() : OptSequence
+    + generateO2() : OptSequence
+    + generateO3() : OptSequence
+    + generateEmpty() : OptSequence
+    + generateFromMetrics(metrics : const IRMetrics&,
+                          length : int) : OptSequence
+}
+
+class SequenceMutator {
+    + mutate(seq : const OptSequence&) : OptSequence
+    + insertRandomPass(seq : const OptSequence&) : OptSequence
+    + removeRandomPass(seq : const OptSequence&) : OptSequence
+    + swapRandomPasses(seq : const OptSequence&) : OptSequence
+}
+
+class PassRegistry {
+    - availablePasses_ : std::vector<std::string>
+    --
+    + PassRegistry()
+    + allPasses() : const std::vector<std::string>&
+    + randomPass() : std::string
+    + contains(pass : const std::string&) : bool
+}
+
+RandomSearch ..> SequenceGenerator : creates candidates
+HillClimbing ..> SequenceGenerator : creates initial sequence
+HillClimbing ..> SequenceMutator : improves sequence
+SimulatedAnnealing ..> SequenceGenerator : creates initial sequence
+SimulatedAnnealing ..> SequenceMutator : creates neighbours
+
+SequenceGenerator --> PassRegistry
+SequenceMutator --> PassRegistry
+
+' =========================
+' EVALUATION PIPELINE
+' =========================
+
+class LLVMEvaluator {
+    - llvm_ : LLVMFacade
+    - analyzer_ : IRAnalyzer
+    - sourceIR_ : std::string
+    --
+    + LLVMEvaluator(sourceIR : const std::string&,
+                    llvm : LLVMFacade,
+                    analyzer : IRAnalyzer)
+    + evaluate(seq : const OptSequence&) : EvaluationResult
+}
+
+IEvaluator <|.. LLVMEvaluator
+
+class LLVMFacade {
+    - config_ : LLVMConfig
+    --
+    + LLVMFacade(config : const LLVMConfig&)
+    + compileToIR(sourceFile : const std::string&) : std::string
+    + applyPasses(ir : const std::string&,
+                  seq : const OptSequence&) : std::string
+    + runExecutable(ir : const std::string&) : double
+    + verifyIR(ir : const std::string&) : bool
+}
+
+struct LLVMConfig {
+    llvmBinPath : std::string
+    clangPath : std::string
+    optPath : std::string
+    lliPath : std::string
+    timeoutMs : int
+}
+
+class IRAnalyzer {
+    - countOccurrences(ir : const std::string&,
+                       pattern : const std::string&) : int
+    --
+    + IRAnalyzer()
+    + analyze(ir : const std::string&) : IRMetrics
+}
+
+LLVMEvaluator --> LLVMFacade
+LLVMEvaluator --> IRAnalyzer
+LLVMEvaluator ..> EvaluationResult
+LLVMFacade ..> LLVMConfig
+IRAnalyzer ..> IRMetrics
+
+' =========================
+' COST MODELS: STRATEGY
+' =========================
+
+class WeightedCostModel {
+    - instructionWeight_ : double
+    - memoryWeight_ : double
+    - branchWeight_ : double
+    - runtimeWeight_ : double
+    --
+    + WeightedCostModel()
+    + score(metrics : const IRMetrics&,
+            baseline : const IRMetrics&) : double
+    + isBetter(a : double, b : double) : bool
+}
+
+class InstructionCountCostModel {
+    + score(metrics : const IRMetrics&,
+            baseline : const IRMetrics&) : double
+    + isBetter(a : double, b : double) : bool
+}
+
+class RuntimeCostModel {
+    + score(metrics : const IRMetrics&,
+            baseline : const IRMetrics&) : double
+    + isBetter(a : double, b : double) : bool
+}
+
+ICostModel <|.. WeightedCostModel
+ICostModel <|.. InstructionCountCostModel
+ICostModel <|.. RuntimeCostModel
+
+' =========================
+' FACTORIES
+' =========================
+
+class AlgorithmFactory {
+    + create(type : AlgorithmType,
+             config : const SolverConfig&) : std::unique_ptr<IAlgorithm>
+}
+
+class CostModelFactory {
+    + create(type : CostModelType) : std::unique_ptr<ICostModel>
+}
+
+class EvaluatorFactory {
+    + create(config : const SolverConfig&) : std::unique_ptr<IEvaluator>
+}
+
+AlgorithmFactory ..> IAlgorithm
+AlgorithmFactory ..> RandomSearch
+AlgorithmFactory ..> HillClimbing
+AlgorithmFactory ..> SimulatedAnnealing
+
+CostModelFactory ..> ICostModel
+CostModelFactory ..> WeightedCostModel
+CostModelFactory ..> InstructionCountCostModel
+CostModelFactory ..> RuntimeCostModel
+
+EvaluatorFactory ..> IEvaluator
+EvaluatorFactory ..> LLVMEvaluator
+EvaluatorFactory ..> LLVMFacade
+EvaluatorFactory ..> IRAnalyzer
+
+' =========================
+' BUILDER
+' =========================
+
+class SolverBuilder {
+    - config_ : SolverConfig
+    --
+    + SolverBuilder()
+    + withSourceFile(path : const std::string&) : SolverBuilder&
+    + withIR(ir : const std::string&) : SolverBuilder&
+    + withAlgorithm(type : AlgorithmType) : SolverBuilder&
+    + withCostModel(type : CostModelType) : SolverBuilder&
+    + withMaxEvaluations(value : int) : SolverBuilder&
+    + withSequenceLength(value : int) : SolverBuilder&
+    + withRuntimeMeasurement(enabled : bool) : SolverBuilder&
+    + withVerbose(enabled : bool) : SolverBuilder&
+    + build() : std::unique_ptr<PhaseOrderingSolver>
+}
+
+SolverBuilder --> SolverConfig
+SolverBuilder ..> AlgorithmFactory
+SolverBuilder ..> CostModelFactory
+SolverBuilder ..> EvaluatorFactory
+SolverBuilder ..> PhaseOrderingSolver
+
+' =========================
+' MAIN RELATIONSHIPS
+' =========================
+
+PhaseOrderingSolver *--> IAlgorithm : owns strategy
+PhaseOrderingSolver *--> IEvaluator : owns evaluator
+PhaseOrderingSolver *--> ICostModel : owns cost strategy
+PhaseOrderingSolver --> SolverConfig
+
+PhaseOrderingSolver ..> AlgoContext
+PhaseOrderingSolver ..> AlgoResult
+
+IAlgorithm ..> AlgoContext
+IAlgorithm ..> AlgoResult
+AlgoContext --> IEvaluator
+AlgoContext --> ICostModel
+AlgoContext --> IRMetrics
+AlgoResult --> OptSequence
+AlgoResult --> IRMetrics
+EvaluationResult --> OptSequence
+EvaluationResult --> IRMetrics
+
+SolverConfig ..> AlgorithmType
+SolverConfig ..> CostModelType
+
+' =========================
+' NOTES
+' =========================
+
+note right of PhaseOrderingSolver
+    <b>Orchestrator</b>
+
+    Main class of the system.
+
+    Responsibilities:
+    1. Prepares AlgoContext
+    2. Runs selected optimization algorithm
+    3. Stores common configuration
+    4. Does not know details of LLVM internals
+    5. Does not implement search logic itself
+
+    Pattern role:
+    High-level coordinator.
+end note
+
+note bottom of IAlgorithm
+    <b>Strategy Pattern</b>
+
+    Common interface for all search algorithms.
+
+    Implementations:
+    1. RandomSearch
+    2. HillClimbing
+    3. SimulatedAnnealing
+
+    New algorithms can be added without changing
+    PhaseOrderingSolver.
+end note
+
+note bottom of IEvaluator
+    <b>Evaluation abstraction</b>
+
+    Converts optimization sequence into metrics.
+
+    Algorithm only asks:
+    "How good is this sequence?"
+
+    Algorithm does not know:
+    1. How LLVM passes are executed
+    2. How IR is parsed
+    3. How runtime is measured
+end note
+
+note bottom of ICostModel
+    <b>Strategy Pattern</b>
+
+    Encapsulates optimization objective.
+
+    Examples:
+    1. Minimize instruction count
+    2. Minimize execution time
+    3. Weighted combination of metrics
+
+    Allows changing "what is better"
+    without changing algorithms.
+end note
+
+note top of LLVMEvaluator
+    <b>Evaluation Pipeline</b>
+
+    1. Takes original IR
+    2. Applies optimization sequence using LLVMFacade
+    3. Analyzes optimized IR using IRAnalyzer
+    4. Returns EvaluationResult
+
+    This class connects algorithmic part
+    with LLVM-specific part.
+end note
+
+note right of LLVMFacade
+    <b>Facade Pattern</b>
+
+    Hides low-level LLVM API / CLI calls.
+
+    Provides simple methods:
+    1. compileToIR()
+    2. applyPasses()
+    3. verifyIR()
+    4. runExecutable()
+
+    Other classes should not call LLVM directly.
+end note
+
+note bottom of IRAnalyzer
+    <b>IR Analysis</b>
+
+    Parses LLVM IR text and extracts metrics.
+
+    Does not optimize IR.
+    Does not choose passes.
+    Only collects information.
+end note
+
+note bottom of IRMetrics
+    <b>Metrics DTO</b>
+
+    Stores measurable characteristics of LLVM IR.
+
+    Important:
+    IRMetrics should not decide globally
+    what is better.
+
+    Comparison logic is moved to ICostModel.
+end note
+
+note bottom of OptSequence
+    <b>Value Object</b>
+
+    Represents ordered list of LLVM passes.
+
+    Example:
+    mem2reg -> instcombine -> simplifycfg
+
+    Phase ordering problem searches exactly
+    for the best OptSequence.
+end note
+
+note bottom of SequenceGenerator
+    <b>Sequence creation utility</b>
+
+    Creates initial candidate sequences.
+
+    Used by:
+    1. RandomSearch
+    2. HillClimbing
+    3. SimulatedAnnealing
+
+    Does not evaluate sequences.
+end note
+
+note bottom of SequenceMutator
+    <b>Mutation helper</b>
+
+    Produces neighbour sequences.
+
+    Useful for local-search algorithms:
+    1. HillClimbing
+    2. SimulatedAnnealing
+    3. Genetic algorithms later
+end note
+
+note bottom of PassRegistry
+    <b>Pass registry</b>
+
+    Stores allowed LLVM optimization passes.
+
+    Central place for pass names.
+
+    Prevents hardcoding pass lists
+    inside algorithms.
+end note
+
+note bottom of AlgorithmFactory
+    <b>Factory Pattern</b>
+
+    Creates algorithm by enum type.
+
+    Keeps object creation logic outside main().
+end note
+
+note bottom of CostModelFactory
+    <b>Factory Pattern</b>
+
+    Creates selected cost model.
+
+    Useful for experiments with different
+    optimization objectives.
+end note
+
+note bottom of EvaluatorFactory
+    <b>Factory Pattern</b>
+
+    Creates evaluator and hides construction of:
+    1. LLVMFacade
+    2. IRAnalyzer
+    3. LLVMEvaluator
+end note
+
+note right of SolverBuilder
+    <b>Builder Pattern</b>
+
+    Convenient way to configure solver.
+
+    Example:
+    SolverBuilder()
+      .withAlgorithm(HillClimbing)
+      .withCostModel(Weighted)
+      .withMaxEvaluations(1000)
+      .build();
+
+    Prevents huge constructors in user code.
+end note
+
+note bottom of AlgoContext
+    <b>Algorithm Context</b>
+
+    Contains everything algorithm needs
+    during search.
+
+    Important:
+    Algorithm receives evaluator and cost model
+    through context, therefore it stays independent
+    from LLVM-specific classes.
+end note
+
+note bottom of AlgoResult
+    <b>Algorithm Result</b>
+
+    Contains:
+    1. Best found sequence
+    2. Metrics after optimization
+    3. Best score
+    4. Number of evaluations
+    5. Improvement over baseline
+    6. Optional text log
+end note
+
+note bottom of SolverConfig
+    <b>Configuration</b>
+
+    Contains user-level parameters:
+    1. Input source or IR
+    2. Selected algorithm
+    3. Selected cost model
+    4. Evaluation limits
+    5. LLVM paths
+    6. Runtime measurement flag
+end note
+
+@enduml
