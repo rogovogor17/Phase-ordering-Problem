@@ -1,0 +1,72 @@
+' --- Clean Light Theme ---
+@startuml _theme_light
+
+skinparam backgroundColor #FAFAFA
+skinparam defaultFontName "Segoe UI,Helvetica Neue,Arial,sans-serif"
+skinparam defaultFontSize 13
+skinparam defaultFontColor #2C3E50
+skinparam roundCorner 8
+
+' --- Arrows ---
+skinparam ArrowColor #7F8C8D
+skinparam ArrowFontColor #2C3E50
+skinparam ArrowThickness 1.5
+
+' --- Rectangles ---
+skinparam rectangle {
+    BackgroundColor #FFFFFF
+    BorderColor #3498DB
+    BorderThickness 2
+    FontColor #2C3E50
+    FontStyle bold
+    Shadowing true
+}
+
+' --- Actors ---
+skinparam actor {
+    BackgroundColor #ECF0F1
+    BorderColor #95A5A6
+    BorderThickness 2
+    FontColor #2C3E50
+    FontStyle bold
+}
+
+' --- Notes ---
+skinparam note {
+    BackgroundColor #FFF9E6
+    BorderColor #F39C12
+    BorderThickness 1
+    FontColor #7D6608
+    FontSize 12
+}
+
+' --- Packages ---
+skinparam package {
+    BackgroundColor #F4F6F7
+    BorderColor #BDC3C7
+    BorderThickness 1.5
+    FontColor #2C3E50
+    FontStyle italic
+}
+
+' --- Titles ---
+skinparam title {
+    FontSize 18
+    FontColor #2C3E50
+    FontStyle bold
+}
+
+' --- Footers ---
+skinparam footer {
+    FontSize 10
+    FontColor #95A5A6
+    FontStyle italic
+}
+
+' --- Diagram borders ---
+skinparam frame {
+    BorderColor #BDC3C7
+    BackgroundColor #FFFFFF
+}
+
+@enduml

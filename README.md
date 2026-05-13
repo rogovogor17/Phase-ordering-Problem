@@ -1,3 +1,6 @@
+<!-- markdownlint-disable MD033 -->
+<!-- markdownlint-disable MD041 -->
+
 <a id="readme-top"></a>
 
 [![C++][cpp-shield]][cpp-url]
@@ -16,7 +19,7 @@
 
 <div align="center">
 
-**[View Benchmark Results](#benchmark-results)**
+**[View Benchmark Results](#benchmarking)**
 
 [Getting Started](#getting-started) • [Architecture](#architecture) • [Implemented Methods](#implemented-methods) • [Performance Analysis](#performance-analysis)
 
@@ -54,9 +57,13 @@
 
 ---
 
+\anchor about-the-project
+
 ## About The Project
 
 Project Description
+
+\anchor key-features
 
 ### Key Features
 
@@ -68,7 +75,11 @@ Project Description
 
 ---
 
+\anchor getting-started
+
 ## Getting Started
+
+\anchor prerequisites
 
 ### Prerequisites
 
@@ -80,6 +91,8 @@ Project Description
 | **.clang-format** | 22.0.0        | `sudo apt install clang-format` |
 | **Doxygen**       | 1.16.0        | `sudo apt install doxygen`      |
 
+\anchor installation
+
 ### Installation
 
 ```bash
@@ -87,6 +100,8 @@ Project Description
 git clone https://github.com/rogovogor17/ProjectRepo
 cd ProjectRepo
 ```
+
+\anchor building
 
 ### Building
 
@@ -100,6 +115,8 @@ cmake ..
 # Build everything
 cmake --build .
 ```
+
+\anchor running
 
 ### Running
 
@@ -118,7 +135,11 @@ ctest
 
 ---
 
+\anchor architecture
+
 ## Architecture
+
+\anchor module-structure
 
 ### Module Structure
 
@@ -130,13 +151,19 @@ ctest
 
 ---
 
+\anchor implemented-methods
+
 ## Implemented Methods
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 ---
 
+\anchor testing
+
 ## Testing
+
+\anchor test-coverage
 
 ### Test Coverage
 
@@ -145,11 +172,15 @@ ctest
 | **Implemented method** | Condition description | Pass   |
 |                        | Native code           | Pass   |
 
+\anchor running-tests
+
 ### Running Tests
 
 ```bash
 cd build && ctest --output-on-failure
 ```
+
+\anchor test-results
 
 ### Test results
 
@@ -159,7 +190,11 @@ cd build && ctest --output-on-failure
 
 ---
 
+\anchor benchmarking
+
 ## Benchmarking
+
+\anchor benchmarked-on
 
 ### Benchmarked On
 
@@ -194,15 +229,21 @@ cd build && ctest --output-on-failure
   </tr>
 </table>
 
+\anchor test-configurations
+
 ### Test Configuration
 
 | Parameter     | Value |
 | ------------- | ----- |
 | **Data Type** | ...   |
 
+\anchor implemented-method-1
+
 ### Implemented method 1
 
 ![Implemented method 1](imgs/bench_....png 'Implemented method 1')
+
+\anchor speedup-summary
 
 ### Speedup Summary
 
@@ -212,6 +253,8 @@ cd build && ctest --output-on-failure
 
 ---
 
+\anchor performance-analysis
+
 ## Performance Analysis
 
 Some words for importance of your project and making it more efficient
@@ -219,6 +262,8 @@ Some words for importance of your project and making it more efficient
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 ---
+
+\anchor roadmap
 
 ## Roadmap
 
@@ -235,6 +280,8 @@ Some words for importance of your project and making it more efficient
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 ---
+
+\anchor references
 
 ## References
 
@@ -256,7 +303,3 @@ Some words for importance of your project and making it more efficient
 [benchmark-url]: https://github.com/google/benchmark
 [tests-shield]: https://img.shields.io/badge/Tests-Google_Test-4285F4?style=for-the-badge&logo=google&logoColor=white
 [tests-url]: https://github.com/google/googletest
-[license-shield]: https://img.shields.io/badge/License-MIT-green.svg?style=for-the-badge
-[license-url]: LICENSE
-[simd-shield]: https://img.shields.io/badge/SIMD-AVX2-0078D4?style=for-the-badge&logo=intel&logoColor=white
-[simd-url]: https://www.intel.com/content/www/us/en/docs/intrinsics-guide/

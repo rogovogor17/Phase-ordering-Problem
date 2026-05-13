@@ -1,28 +1,46 @@
-cmake_minimum_required(VERSION 3.20)
-project(MyProject VERSION 1.0 LANGUAGES CXX)
-enable_testing()
+cmake_minimum_required(VERSION 3.14)
+project(PhaseOrdering VERSION 1.0.0 LANGUAGES CXX)
 
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
 
-set(FLAGS -DDEBUG -O0 -fsanitize=address,alignment -Wall -Wextra -Wfloat-equal
-	-Weffc++ -Wnon-virtual-dtor -Woverloaded-virtual -Wsuggest-override
-	-Wcast-align -Wcast-qual -Wconversion -Wsign-conversion -Wsign-promo
-	-Wpacked -Wunused -fsized-deallocation
-	-Wmissing-declarations -Wchar-subscripts -Wempty-body -Winline -Wshadow
-	-Wswitch-default -Wundef -Wunreachable-code -Wvariadic-macros
-	-fPIE -fno-omit-frame-pointer -Werror=vla)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
-find_program(IWYU_PATH NAMES include-what-you-use iwyu)
-if(IWYU_PATH)
-	set(IWYU_COMMAND "${IWYU_PATH}"
-		"-Xiwyu;--verbose=1;"
-		"-Xiwyu;--comment_style=long;"
-		"-Xiwyu;--mapping_file=$ENV{IWYU_MAPPING_FILE};"
-	)
-endif()
+find_package(Threads REQUIRED)
 
-add_library(implementation STATIC)
-add_subdirectory(src)
-add_subdirectory(tests)
-add_subdirectory(benchmarks)
+add_library(phaseordering_lib
+    src/data_types.cpp
+    # src/logging.cpp
+    src/sequence_ops.cpp
+    src/ir_analyzer.cpp
+    src/llvm_facade.cpp
+    # src/evaluator_impl.cpp
+    # src/algorithms.cpp
+    # src/cost_models.cpp
+    # src/factories.cpp
+    src/solver.cpp
+)
+
+target_include_directories(phaseordering_lib PUBLIC include)
+target_link_libraries(phaseordering_lib PRIVATE Threads::Threads)
+
+add_executable(phaseordering src/main.cpp)
+target_link_libraries(phaseordering PRIVATE phaseordering_lib)
+
+include(FetchContent)
+
+FetchContent_Declare(
+    googlebenchmark
+    GIT_REPOSITORY https://github.com/google/benchmark.git
+    GIT_TAG v1.8.3
+)
+set(BENCHMARK_ENABLE_TESTING OFF CACHE BOOL "" FORCE)
+set(BENCHMARK_ENABLE_INSTALL OFF CACHE BOOL "" FORCE)
+FetchContent_MakeAvailable(googlebenchmark)
+
+add_executable(phaseordering_bench
+    benchmark/benchmark_main.cpp
+)
+target_link_libraries(phaseordering_bench PRIVATE phaseordering_lib benchmark::benchmark)

@@ -1,0 +1,197 @@
+' --- PlantUML Phase-Ordering Schema ---
+@startuml system-overview
+!include ../include/_theme_light.puml
+
+title Phase-Ordering Schema
+
+' --- Interfaces ---
+
+interface IAlgorithm {
+    + {abstract} run(ctx : const AlgoContext&) : AlgoResult
+}
+
+struct AlgoContext {
+    ir : const std::string&
+    baselineMetrics : const IRMetrics&
+    llvm : const LLVMFacade&
+    analyzer : const IRAnalyzer&
+    maxEvaluations : int
+    verbose : bool
+}
+
+struct AlgoResult {
+    bestSequence : OptSequence
+    bestMetrics : IRMetrics
+    evaluationsUsed : int
+    improvementRatio : double
+    log : std::string
+}
+
+' --- Interfaces realization ---
+
+class RandomSearch {
+    - sequenceLength_ : int
+    --
+    + RandomSearch(sequenceLength : int)
+    + run(ctx : const AlgoContext&) : AlgoResult
+}
+
+class HillClimbing {
+    - maxNoImprove_ : int
+    --
+    + RandomSearch(maxNoImprove : int)
+    + run(ctx : const AlgoContext&) : AlgoResult
+}
+
+' --- Helpful classes ---
+
+class IRAnalyzer {
+    - countOccurrences(ir : const std::string&, pattern : const std::string&) : int
+    --
+    + IRAnalyzer()
+    + analyze(ir : const std::string&) : IRMetrics
+    + isBetter(a : const IRMetrics&, b : const IRMetrics&) : bool
+    + normalizeCost(metrics : const IRMetrics&, baseline : const IRMetrics&) : double
+}
+
+struct IRMetrics {
+    totalInstructions : int
+    totalBasicBlock : int
+    totalFunctions : int
+    avgBasicBlock : double
+    maxBlockDepth : int
+    memoryOps : int
+    branchOps : int
+    callOps : int
+    arithmeticOps : int
+    executionTimeMs : double
+    --
+    + cost() : double
+    + toString() : std::string
+}
+
+class SequenceGenerator {
+    + generateRandom(length : int) : OptSequence
+    + generateO2() : OptSequence
+    + generateO3() : OptSequence
+    + generateFromIR(metrics : const IRMetrics&, length : int) : OptSequence
+    + generateEmpty() : OptSequence
+}
+
+class PhaseOrderingSolver {
+    - analyzer_ : std::unique_ptr<IRAnalyzer>
+    - algorithm_ : std::unique_ptr<IAlgorithm>
+    - llvm_ : std::unique_ptr<LLVMFacade>
+    - config_ : SolverConfig
+    --
+    + PhaseOrderingSolver()
+    + setAlgorithm(algorithm : std::unique_ptr<IAlgorithm>) : void
+    + setAnalyzer(analyzer : std::unique_ptr<IRAnalyzer> ) : void
+    + solve(sourceFile : const std::string&) : AlgoResult
+    + solveIR(ir : const std::string&) : AlgoResult
+    + evaluate(sourceFile : const std::string&, sequence : const OptSequence&) : IRMetrics
+    + evaluateIR(ir : const std::string&, sequence : const OptSequence&) : IRMetrics
+    + config() : const SolverConfig&
+    + llvm() : const LLVMFacade&
+}
+
+struct SolverConfig {
+    maxEvaluations : int
+    verbose : bool
+    measureRuntime : bool
+    llvmBinPath : std::string
+}
+
+' --- Class Relationships ---
+
+' Interface realization:
+IAlgorithm <|.. RandomSearch
+IAlgorithm <|.. HillClimbing
+
+' Usings:
+RandomSearch <.. SequenceGenerator : generateRandom
+HillClimbing <.. SequenceGenerator : generateFromIR
+
+' Association:
+PhaseOrderingSolver --> "0..*" IAlgorithm : interface
+PhaseOrderingSolver --> "0..*" IRAnalyzer
+
+' Enum/Struct dependencies:
+PhaseOrderingSolver ..> SolverConfig
+IAlgorithm ..> AlgoContext
+IAlgorithm ..> AlgoResult
+IRAnalyzer ..> IRMetrics
+
+' --- Notes ---
+
+note right of PhaseOrderingSolver
+    <b>Orchestrator</b>
+    Finds the best optimization sequence for IR or Source
+    Evaluates IRMetrics for specific optimization sequence
+end note
+
+note bottom of SolverConfig
+    <b>Configuration</b>
+    1. Maximum quantity of epochs
+    2. Dump detail
+    3. Execute the program for collecting metrics
+    4. Path to LLVM binary file
+end note
+
+note bottom of IAlgorithm
+    <b>Interface</b>
+    All methods are clearly virtual (= 0).
+    Virtual destructor must be!
+end note
+
+note top of AlgoContext
+    <b>Context</b>
+    1. Current IR
+    2. IRMetrics based on unoptimized IR
+    3. LLVM commands
+    4. IRAnalyzer used by Algorithm
+    5. Maximum quantity of epochs
+    6. Dump detail
+end note
+
+note top of AlgoResult
+    <b>Result</b>
+    1. The best optimization sequence was finding by Algorithm
+    2. IRMetrics based on the bestSequence
+    3. Amount of evaluations required for Algorithm
+    4. Improvement ratio over the baseMetrics
+    5. Additional information during calculations
+end note
+
+note bottom of RandomSearch
+    <b>Random Algorithm</b>
+    Realizes random algorithm of generating optimization
+    sequence on each epoch. Using in average for baseline
+    comparing.
+end note
+
+note bottom of HillClimbing
+    <b>Linear Algorithm</b>
+    Realizes linear algorithm of generating optimization
+    sequence on each epoch. Using mutations for generating.
+    Applying changes in improvement cases.
+end note
+
+note bottom of SequenceGenerator
+    <b>Fabric</b>
+    Generates different optimization sequences.
+end note
+
+note top of IRAnalyzer
+    <b>Analysis</b>
+    Get LLVM IR and run analysis to collect metrics.
+    Can calculate normalized cost of given metrics.
+end note
+
+note bottom of IRMetrics
+    <b>Metrics</b>
+    The meaningful characteristics of LLVM IR that used
+    for searching the best optimization sequence.
+end note
+
+@enduml
