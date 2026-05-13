@@ -4,8 +4,8 @@
 #include <string>
 
 #include "data_types.hpp"
-// #include "interfaces.hpp"
-// #include "logging.hpp"
+#include "interfaces.hpp"
+#include "logging.hpp"
 
 namespace phaseordering {
 
@@ -22,16 +22,17 @@ namespace phaseordering {
  */
 class PhaseOrderingSolver {
    private:
-    // std::unique_ptr<IAlgorithm> algorithm_;
-    // std::unique_ptr<IEvaluator> evaluator_;
-    // std::unique_ptr<ICostModel> costModel_;
+    std::unique_ptr<IAlgorithm> algorithm_;
+    std::unique_ptr<IEvaluator> evaluator_;
+    std::unique_ptr<ICostModel> costModel_;
     SolverConfig config_;
-    // Logger logger_;
+    Logger logger_;
+
    public:
-    // PhaseOrderingSolver(std::unique_ptr<IAlgorithm> algorithm,
-    //                     std::unique_ptr<IEvaluator> evaluator,
-    //                     std::unique_ptr<ICostModel> costModel,
-    //                     SolverConfig config);
+    PhaseOrderingSolver(std::unique_ptr<IAlgorithm> algorithm,
+                        std::unique_ptr<IEvaluator> evaluator,
+                        std::unique_ptr<ICostModel> costModel,
+                        SolverConfig config);
 
     /** Compile a source file to IR, then optimize. */
     AlgoResult solve(const std::string& sourceFile);

@@ -3,8 +3,8 @@
 #include <filesystem>
 #include <sstream>
 
-// #include "evaluator_impl.hpp"
-// #include "factories.hpp"
+#include "evaluator_impl.hpp"
+#include "factories.hpp"
 #include "ir_analyzer.hpp"
 #include "llvm_facade.hpp"
 #include "sequence_ops.hpp"

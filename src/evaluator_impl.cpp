@@ -1,16 +1,15 @@
 #include "evaluator_impl.hpp"
+
 #include "logging.hpp"
 
 namespace phaseordering {
 
-LLVMEvaluator::LLVMEvaluator(const std::string& sourceIR,
-                             LLVMFacade llvm,
-                             IRAnalyzer analyzer,
-                             bool measureRuntime)
-    : llvm_(std::move(llvm))
-    , analyzer_(std::move(analyzer))
-    , sourceIR_(sourceIR)
-    , measureRuntime_(measureRuntime) {}
+LLVMEvaluator::LLVMEvaluator(const std::string& sourceIR, LLVMFacade llvm,
+                             IRAnalyzer analyzer, bool measureRuntime)
+    : llvm_(std::move(llvm)),
+      analyzer_(std::move(analyzer)),
+      sourceIR_(sourceIR),
+      measureRuntime_(measureRuntime) {}
 
 EvaluationResult LLVMEvaluator::evaluate(const OptSequence& seq) {
     EvaluationResult result;
@@ -52,12 +51,8 @@ EvaluationResult LLVMEvaluator::evaluate(const OptSequence& seq) {
     return result;
 }
 
-LLVMFacade& LLVMEvaluator::getLLVMFacade() {
-    return llvm_;
-}
+LLVMFacade& LLVMEvaluator::getLLVMFacade() { return llvm_; }
 
-const LLVMFacade& LLVMEvaluator::getLLVMFacade() const {
-    return llvm_;
-}
+const LLVMFacade& LLVMEvaluator::getLLVMFacade() const { return llvm_; }
 
-} // namespace phaseordering
+}  // namespace phaseordering

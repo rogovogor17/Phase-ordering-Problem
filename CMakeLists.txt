@@ -12,14 +12,14 @@ find_package(Threads REQUIRED)
 
 add_library(phaseordering_lib
     src/data_types.cpp
-    # src/logging.cpp
+    src/logging.cpp
     src/sequence_ops.cpp
     src/ir_analyzer.cpp
     src/llvm_facade.cpp
-    # src/evaluator_impl.cpp
-    # src/algorithms.cpp
-    # src/cost_models.cpp
-    # src/factories.cpp
+    src/evaluator_impl.cpp
+    src/algorithms.cpp
+    src/cost_models.cpp
+    src/factories.cpp
     src/solver.cpp
 )
 
