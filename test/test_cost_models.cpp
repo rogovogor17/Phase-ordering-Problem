@@ -1,4 +1,5 @@
 #include <gtest/gtest.h>
+
 #include "cost_models.hpp"
 
 using namespace phaseordering;

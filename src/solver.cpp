@@ -24,11 +24,15 @@ PhaseOrderingSolver::PhaseOrderingSolver(std::unique_ptr<IAlgorithm> algorithm,
 AlgoResult PhaseOrderingSolver::solve(const std::string& sourceFile) {
     config_.sourceFile = sourceFile;
 
-    LLVMConfig llvmConfig;
-    llvmConfig.llvmBinPath = config_.llvmBinPath;
-    LLVMFacade llvm(llvmConfig);
+    LLVMEvaluator* llvmEval = dynamic_cast<LLVMEvaluator*>(evaluator_.get());
+    if (!llvmEval) {
+        logger_.error("Source file compilation requires LLVM evaluator");
+        AlgoResult result;
+        result.log = "LLVM evaluator required for source file compilation";
+        return result;
+    }
 
-    if (!llvm.isAvailable()) {
+    if (!llvmEval->getLLVMFacade().isAvailable()) {
         logger_.error(
             "LLVM tools (clang/opt) not found. Install LLVM or specify "
             "--llvm-path");
@@ -37,46 +41,93 @@ AlgoResult PhaseOrderingSolver::solve(const std::string& sourceFile) {
         return result;
     }
 
-    logger_.info("Compiling source file: " + sourceFile);
-    logger_.info("Using clang: " + llvm.getClangPath());
-    logger_.info("Using opt: " + llvm.getOptPath());
+    std::string ir;
 
-    std::string ir = llvm.compileToIR(sourceFile);
-    if (ir.empty()) {
-        std::string err = llvm.getLastError();
-        logger_.error("Failed to compile source file to IR: " + err);
-        AlgoResult result;
-        result.log = "Failed to compile source file: " + err;
-        return result;
+    if (!config_.inputIR.empty()) {
+        ir = config_.inputIR;
+    } else {
+        const std::string& cachedIR = llvmEval->getSourceIR();
+        if (!cachedIR.empty() &&
+            cachedIR.find("define ") != std::string::npos) {
+            logger_.info("Using IR already compiled by evaluator");
+            ir = cachedIR;
+        } else {
+            logger_.info("Compiling source file: " + sourceFile);
+            logger_.info("Using clang: " +
+                         llvmEval->getLLVMFacade().getClangPath());
+            logger_.info("Using opt: " +
+                         llvmEval->getLLVMFacade().getOptPath());
+
+            ir = llvmEval->getLLVMFacade().compileToIR(sourceFile);
+            if (ir.empty()) {
+                std::string err = llvmEval->getLLVMFacade().getLastError();
+                logger_.error("Failed to compile source file to IR: " + err);
+                AlgoResult result;
+                result.log = "Failed to compile source file: " + err;
+                return result;
+            }
+
+            logger_.info("Successfully compiled to IR (" +
+                         std::to_string(ir.size()) + " bytes)");
+        }
     }
 
-    logger_.info("Successfully compiled to IR (" + std::to_string(ir.size()) +
-                 " bytes)");
-
-    if (config_.inputIR.empty()) {
-        config_.inputIR = ir;
-    }
+    config_.inputIR = ir;
 
     return solveIR(ir);
 }
 
 AlgoResult PhaseOrderingSolver::solveIR(const std::string& ir) {
+    if (ir.empty()) {
+        logger_.error("Input IR is empty — cannot optimize");
+        AlgoResult fail;
+        fail.log = "Input IR is empty";
+        return fail;
+    }
+    if (ir.find("define ") == std::string::npos) {
+        logger_.error(
+            "Input IR contains no function definitions. "
+            "This may be an empty file, a header-only file, or a compilation "
+            "error.");
+        AlgoResult fail;
+        fail.log =
+            "Input IR has no function definitions — cannot optimize an empty "
+            "program";
+        return fail;
+    }
+
     logger_.info("Starting optimization with " +
                  algorithmTypeToString(config_.algorithmType) + " algorithm");
 
+    // Establish baseline: run opt with no passes to get a canonicalized
+    // starting point. FIX: Previously we evaluated an empty OptSequence here,
+    // which returned raw IR on the old code (before evaluator fix). Now it goes
+    // through opt correctly.
     EvaluationResult baselineEval = evaluator_->evaluate(OptSequence());
     IRMetrics baselineMetrics;
 
-    if (baselineEval.success) {
+    if (baselineEval.success && baselineEval.metrics.totalInstructions > 0) {
         baselineMetrics = baselineEval.metrics;
+        logger_.info("Baseline metrics collected (" +
+                     std::to_string(baselineMetrics.totalInstructions) +
+                     " instructions)");
     } else {
-        logger_.info(
-            "Baseline evaluation via LLVM failed, using IR text analysis");
+        // Fall back to static text analysis if opt baseline fails
+        logger_.info("Baseline evaluation via LLVM failed (" +
+                     baselineEval.errorMessage +
+                     "), using IR text analysis for baseline");
         IRAnalyzer analyzer;
         baselineMetrics = analyzer.analyze(ir);
+        if (baselineMetrics.totalInstructions <= 0) {
+            logger_.error(
+                "IR text analysis also failed to produce valid baseline "
+                "metrics. "
+                "The input IR may be malformed.");
+            AlgoResult fail;
+            fail.log = "Could not establish baseline metrics from input IR";
+            return fail;
+        }
     }
-
-    logger_.info("Baseline metrics collected");
 
     AlgoContext ctx;
     ctx.baselineSequence = OptSequence();
@@ -89,6 +140,26 @@ AlgoResult PhaseOrderingSolver::solveIR(const std::string& ir) {
 
     logger_.progress("Running optimization algorithm...");
     AlgoResult result = algorithm_->run(ctx);
+
+    if (result.bestSequence.empty()) {
+        logger_.error(
+            "Optimization failed: the algorithm did not find any valid "
+            "sequence.");
+        logger_.error(
+            "This often means all candidate pass sequences failed in opt, "
+            "likely due to a pass name incompatibility with the installed LLVM "
+            "version.");
+        logger_.error("Algorithm log:\n" + result.log);
+        return result;
+    }
+
+    if (baselineMetrics.totalInstructions > 0 &&
+        result.bestMetrics.totalInstructions > 0) {
+        result.improvementRatio =
+            static_cast<double>(baselineMetrics.totalInstructions -
+                                result.bestMetrics.totalInstructions) /
+            baselineMetrics.totalInstructions;
+    }
 
     if (baselineEval.success) {
         logger_.printMetricsComparison(baselineMetrics, result.bestMetrics);
@@ -104,7 +175,7 @@ AlgoResult PhaseOrderingSolver::solveIR(const std::string& ir) {
     if (bestEval.success) {
         logger_.printFinalIR(bestEval.optimizedIR);
     } else {
-        logger_.info("Could not evaluate best sequence: " +
+        logger_.info("Could not re-evaluate best sequence: " +
                      bestEval.errorMessage);
     }
 
@@ -132,7 +203,8 @@ AlgoResult PhaseOrderingSolver::solveIR(const std::string& ir) {
                     logger_.printRuntimeComparison(nativeBaseline,
                                                    nativeOptimized);
                 } else {
-                    logger_.info("Native execution failed");
+                    logger_.info(
+                        "Native execution failed or returned zero time");
                 }
 
                 llvmEval->getLLVMFacade().removeTempFile(baselineExe);
@@ -184,10 +256,10 @@ void PhaseOrderingSolver::openLogFile(const std::string& path) {
 }
 
 SolverBuilder::SolverBuilder() {
-    config_.algorithmType = AlgorithmType::HillClimbing;
+    config_.algorithmType = AlgorithmType::SimulatedAnnealing;
     config_.costModelType = CostModelType::Weighted;
-    config_.maxEvaluations = 100;
-    config_.sequenceLength = 5;
+    config_.maxEvaluations = 300;
+    config_.sequenceLength = 20;
     config_.verbose = false;
     config_.measureRuntime = false;
 }
@@ -239,6 +311,11 @@ SolverBuilder& SolverBuilder::withVerbose(bool enabled) {
 
 SolverBuilder& SolverBuilder::withLLVMBinPath(const std::string& path) {
     config_.llvmBinPath = path;
+    return *this;
+}
+
+SolverBuilder& SolverBuilder::withCflags(const std::string& flags) {
+    config_.cflags = flags;
     return *this;
 }
 

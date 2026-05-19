@@ -36,7 +36,7 @@ class SequenceGenerator {
     const PassRegistry* registry_;
 
    public:
-    explicit SequenceGenerator(const PassRegistry* registry);
+    explicit SequenceGenerator(const PassRegistry* registry);  // NOTE
 
     /** Generate a random sequence of the given length. */
     OptSequence generateRandom(int length, std::mt19937& rng) const;

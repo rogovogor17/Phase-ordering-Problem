@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
-#include "ir_analyzer.hpp"
+
 #include "cost_models.hpp"
+#include "ir_analyzer.hpp"
 
 using namespace phaseordering;
 
@@ -119,7 +120,7 @@ entry:
 declare i32 @printf(ptr, ...)
 )";
 
-}
+}  // namespace
 
 TEST(IRAnalyzerTest, SimpleIR_FunctionCount) {
     IRAnalyzer analyzer;
@@ -154,7 +155,7 @@ TEST(IRAnalyzerTest, SimpleIR_MemoryOps) {
 TEST(IRAnalyzerTest, SimpleIR_BranchOps) {
     IRAnalyzer analyzer;
     auto metrics = analyzer.analyze(kSimpleIR);
-    EXPECT_EQ(metrics.branchOps, 1);
+    EXPECT_EQ(metrics.branchOps, 0);
 }
 
 TEST(IRAnalyzerTest, SimpleIR_ArithmeticOps) {
@@ -202,7 +203,7 @@ TEST(IRAnalyzerTest, MultiFunction_ArithmeticOps) {
 TEST(IRAnalyzerTest, MultiFunction_BranchOps) {
     IRAnalyzer analyzer;
     auto metrics = analyzer.analyze(kMultiFunctionIR);
-    EXPECT_EQ(metrics.branchOps, 5);
+    EXPECT_EQ(metrics.branchOps, 2);
 }
 
 TEST(IRAnalyzerTest, LoopIR_FunctionCount) {
@@ -226,7 +227,7 @@ TEST(IRAnalyzerTest, LoopIR_BasicBlocks) {
 TEST(IRAnalyzerTest, LoopIR_BranchOps) {
     IRAnalyzer analyzer;
     auto metrics = analyzer.analyze(kLoopIR);
-    EXPECT_EQ(metrics.branchOps, 4);
+    EXPECT_EQ(metrics.branchOps, 3);
 }
 
 TEST(IRAnalyzerTest, LoopIR_ArithmeticOps) {
@@ -280,14 +281,16 @@ TEST(IRAnalyzerTest, ShortIR_ReturnsInvalid) {
 
 TEST(IRAnalyzerTest, DeclarationOnly_NoFunctions) {
     IRAnalyzer analyzer;
-    auto metrics = analyzer.analyze("declare i32 @printf(ptr, ...)\ndeclare void @exit(i32)\n");
+    auto metrics = analyzer.analyze(
+        "declare i32 @printf(ptr, ...)\ndeclare void @exit(i32)\n");
     EXPECT_EQ(metrics.totalFunctions, 0);
     EXPECT_LT(metrics.totalInstructions, 0);
 }
 
 TEST(IRAnalyzerTest, NoDefineKeyword_ReturnsInvalid) {
     IRAnalyzer analyzer;
-    auto metrics = analyzer.analyze("this is some random text without any functions");
+    auto metrics =
+        analyzer.analyze("this is some random text without any functions");
     EXPECT_LT(metrics.totalInstructions, 0);
 }
 

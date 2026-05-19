@@ -77,6 +77,7 @@ class SolverBuilder {
     SolverBuilder& withRuntimeMeasurementNative(bool enabled);
     SolverBuilder& withVerbose(bool enabled);
     SolverBuilder& withLLVMBinPath(const std::string& path);
+    SolverBuilder& withCflags(const std::string& flags);
     SolverBuilder& withLogConfig(const LogConfig& logConfig);
 
     /** Build and return the configured solver. */

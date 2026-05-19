@@ -1,13 +1,15 @@
 #include <gtest/gtest.h>
-#include "algorithms.hpp"
-#include "interfaces.hpp"
-#include "data_types.hpp"
+
 #include <memory>
+
+#include "algorithms.hpp"
+#include "data_types.hpp"
+#include "interfaces.hpp"
 
 using namespace phaseordering;
 
 class MockEvaluator : public IEvaluator {
-public:
+   public:
     int callCount = 0;
     double baseScore_ = 100.0;
     double improvementPerEval_ = 1.0;
@@ -30,17 +32,17 @@ public:
 };
 
 class MockCostModel : public ICostModel {
-public:
+   public:
     double score(const IRMetrics& metrics, const IRMetrics& baseline) override {
-        return static_cast<double>(metrics.totalInstructions) / baseline.totalInstructions;
+        return static_cast<double>(metrics.totalInstructions) /
+               baseline.totalInstructions;
     }
 
-    bool isBetter(double a, double b) override {
-        return a < b;
-    }
+    bool isBetter(double a, double b) override { return a < b; }
 };
 
-static AlgoContext makeContext(IEvaluator* eval, ICostModel* cost, int maxEvals = 20) {
+static AlgoContext makeContext(IEvaluator* eval, ICostModel* cost,
+                               int maxEvals = 20) {
     AlgoContext ctx;
     ctx.evaluator = eval;
     ctx.costModel = cost;

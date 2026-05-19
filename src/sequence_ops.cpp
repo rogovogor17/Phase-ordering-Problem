@@ -201,7 +201,12 @@ OptSequence SequenceMutator::swapRandomPasses(const OptSequence& seq,
     std::uniform_int_distribution<int> dist(0, result.size() - 1);
     int i = dist(rng);
     int j = dist(rng);
-    while (j == i) j = dist(rng);
+    int attempts = 0;
+    while (j == i && attempts < 10) {
+        j = dist(rng);
+        attempts++;
+    }
+    if (j == i) return seq;
 
     std::swap(passes[i], passes[j]);
     return result;

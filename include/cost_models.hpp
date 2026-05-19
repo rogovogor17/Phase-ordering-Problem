@@ -1,7 +1,7 @@
 #pragma once
 
-#include "interfaces.hpp"
 #include "data_types.hpp"
+#include "interfaces.hpp"
 
 namespace phaseordering {
 
@@ -12,12 +12,13 @@ namespace phaseordering {
  * (optimized / baseline). Lower score is better.
  */
 class WeightedCostModel : public ICostModel {
-private:
+   private:
     double instructionWeight_ = 3.0;
     double memoryWeight_ = 1.5;
     double branchWeight_ = 1.0;
     double runtimeWeight_ = 0.0;
-public:
+
+   public:
     WeightedCostModel() = default;
     WeightedCostModel(double instrW, double memW, double branchW, double rtW);
 
@@ -31,7 +32,7 @@ public:
  * Score = optimized_instructions / baseline_instructions.
  */
 class InstructionCountCostModel : public ICostModel {
-public:
+   public:
     double score(const IRMetrics& metrics, const IRMetrics& baseline) override;
     bool isBetter(double a, double b) override;
 };
@@ -43,9 +44,9 @@ public:
  * falls back to instruction count otherwise.
  */
 class RuntimeCostModel : public ICostModel {
-public:
+   public:
     double score(const IRMetrics& metrics, const IRMetrics& baseline) override;
     bool isBetter(double a, double b) override;
 };
 
-} // namespace phaseordering
+}  // namespace phaseordering

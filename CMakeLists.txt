@@ -21,6 +21,8 @@ add_library(phaseordering_lib
     src/cost_models.cpp
     src/factories.cpp
     src/solver.cpp
+    src/cli_flags.cpp
+    src/experiment_stats.cpp
 )
 
 target_include_directories(phaseordering_lib PUBLIC include)
@@ -30,6 +32,27 @@ add_executable(phaseordering src/main.cpp)
 target_link_libraries(phaseordering PRIVATE phaseordering_lib)
 
 include(FetchContent)
+
+FetchContent_Declare(
+    googletest
+    GIT_REPOSITORY https://github.com/google/googletest.git
+    GIT_TAG v1.14.0
+)
+set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+FetchContent_MakeAvailable(googletest)
+
+enable_testing()
+
+add_executable(phaseordering_test
+    test/test_data_types.cpp
+    test/test_sequence_ops.cpp
+    test/test_algorithms.cpp
+    test/test_cost_models.cpp
+    test/test_solver.cpp
+    test/test_ir_analyzer.cpp
+)
+target_link_libraries(phaseordering_test PRIVATE phaseordering_lib GTest::gtest_main)
+add_test(NAME phaseordering_test COMMAND phaseordering_test)
 
 FetchContent_Declare(
     googlebenchmark

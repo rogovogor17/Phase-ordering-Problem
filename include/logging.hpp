@@ -52,8 +52,8 @@ class Logger {
     /** Print a comparison of two runtimes. */
     void printRuntimeComparison(double baselineMs, double optimizedMs) const;
     /** Log a single evaluation step (only if printEachEvaluation is set). */
-    void printEvaluatonResult(int evalNum, const OptSequence& seq,
-                              double score) const;
+    void printEvaluationResult(int evalNum, const OptSequence& seq,
+                               double score) const;
     /** Print the final optimization result summary. */
     void printAlgoResult(const AlgoResult& result) const;
 

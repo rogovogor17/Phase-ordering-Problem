@@ -1,11 +1,12 @@
-#include "solver.hpp"
-#include "ir_analyzer.hpp"
-#include "cost_models.hpp"
-#include "sequence_ops.hpp"
-#include "benchmark/benchmark.h"
-#include <memory>
 #include <fstream>
+#include <memory>
 #include <sstream>
+
+#include "benchmark/benchmark.h"
+#include "cost_models.hpp"
+#include "ir_analyzer.hpp"
+#include "sequence_ops.hpp"
+#include "solver.hpp"
 
 using namespace phaseordering;
 

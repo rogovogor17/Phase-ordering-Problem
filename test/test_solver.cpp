@@ -1,16 +1,18 @@
 #include <gtest/gtest.h>
-#include "solver.hpp"
-#include "factories.hpp"
+
+#include <memory>
+
 #include "algorithms.hpp"
 #include "cost_models.hpp"
 #include "evaluator_impl.hpp"
+#include "factories.hpp"
 #include "interfaces.hpp"
-#include <memory>
+#include "solver.hpp"
 
 using namespace phaseordering;
 
 class MockEvaluatorForSolver : public IEvaluator {
-public:
+   public:
     EvaluationResult evaluate(const OptSequence& seq) override {
         EvaluationResult result;
         result.sequence = seq;
@@ -44,7 +46,8 @@ TEST(AlgorithmFactoryTest, CreateHillClimbing) {
 
 TEST(AlgorithmFactoryTest, CreateSimulatedAnnealing) {
     SolverConfig config;
-    auto algo = AlgorithmFactory::create(AlgorithmType::SimulatedAnnealing, config);
+    auto algo =
+        AlgorithmFactory::create(AlgorithmType::SimulatedAnnealing, config);
     EXPECT_NE(algo, nullptr);
 }
 
@@ -71,12 +74,12 @@ TEST(SolverBuilderTest, DefaultConfig) {
 
 TEST(SolverBuilderTest, ChainMethods) {
     auto solver = SolverBuilder()
-        .withAlgorithm(AlgorithmType::SimulatedAnnealing)
-        .withCostModel(CostModelType::InstructionCount)
-        .withMaxEvaluations(50)
-        .withSequenceLength(3)
-        .withVerbose(true)
-        .build();
+                      .withAlgorithm(AlgorithmType::SimulatedAnnealing)
+                      .withCostModel(CostModelType::InstructionCount)
+                      .withMaxEvaluations(50)
+                      .withSequenceLength(3)
+                      .withVerbose(true)
+                      .build();
     EXPECT_NE(solver, nullptr);
 }
 
@@ -101,7 +104,7 @@ TEST(PhaseOrderingSolverTest, ConstructorAndConfig) {
     config.maxEvaluations = 100;
 
     PhaseOrderingSolver solver(std::move(algo), std::move(eval),
-                                std::move(cost), config);
+                               std::move(cost), config);
     EXPECT_EQ(solver.config().maxEvaluations, 100);
 }
 
@@ -112,7 +115,7 @@ TEST(PhaseOrderingSolverTest, EvaluateSequence) {
 
     SolverConfig config;
     PhaseOrderingSolver solver(std::move(algo), std::move(eval),
-                                std::move(cost), config);
+                               std::move(cost), config);
 
     OptSequence seq;
     seq.add("mem2reg");

@@ -1,9 +1,10 @@
 #pragma once
 
+#include <memory>
+#include <random>
+
 #include "interfaces.hpp"
 #include "sequence_ops.hpp"
-#include <random>
-#include <memory>
 
 namespace phaseordering {
 
@@ -13,12 +14,13 @@ namespace phaseordering {
  * @see IAlgorithm
  */
 class RandomSearch : public IAlgorithm {
-private:
+   private:
     int sequenceLength_;
     int maxSequenceLength_;
     std::unique_ptr<PassRegistry> registry_;
     std::unique_ptr<SequenceGenerator> generator_;
-public:
+
+   public:
     /**
      * @param sequenceLength Length of each random candidate.
      * @param maxSequenceLength Maximum allowed sequence length.
@@ -35,13 +37,14 @@ public:
  * @see IAlgorithm
  */
 class HillClimbing : public IAlgorithm {
-private:
+   private:
     int maxNoImprove_;
     int maxSequenceLength_;
     std::unique_ptr<PassRegistry> registry_;
     std::unique_ptr<SequenceGenerator> generator_;
     std::unique_ptr<SequenceMutator> mutator_;
-public:
+
+   public:
     /**
      * @param maxNoImprove Stop after this many evaluations without improvement.
      * @param maxSequenceLength Maximum allowed sequence length.
@@ -57,21 +60,24 @@ public:
  * @see IAlgorithm
  */
 class SimulatedAnnealing : public IAlgorithm {
-private:
+   private:
     double startTemperature_;
     double coolingRate_;
     int maxSequenceLength_;
     std::unique_ptr<PassRegistry> registry_;
     std::unique_ptr<SequenceGenerator> generator_;
     std::unique_ptr<SequenceMutator> mutator_;
-public:
+
+   public:
     /**
      * @param startTemperature Initial temperature (higher = more exploration).
-     * @param coolingRate Factor by which temperature is multiplied each step (e.g. 0.95).
+     * @param coolingRate Factor by which temperature is multiplied each step
+     * (e.g. 0.95).
      * @param maxSequenceLength Maximum allowed sequence length.
      */
-    SimulatedAnnealing(double startTemperature, double coolingRate, int maxSequenceLength);
+    SimulatedAnnealing(double startTemperature, double coolingRate,
+                       int maxSequenceLength);
     AlgoResult run(const AlgoContext& ctx) override;
 };
 
-} // namespace phaseordering
+}  // namespace phaseordering

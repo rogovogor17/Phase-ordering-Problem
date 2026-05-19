@@ -14,7 +14,6 @@ WeightedCostModel::WeightedCostModel(double instrW, double memW, double branchW,
 
 double WeightedCostModel::score(const IRMetrics& metrics,
                                 const IRMetrics& baseline) {
-    // Invalid metrics means broken IR - return worst possible score
     if (metrics.totalInstructions < 0 || baseline.totalInstructions <= 0) {
         return 1e9;
     }
@@ -28,11 +27,15 @@ double WeightedCostModel::score(const IRMetrics& metrics,
     if (baseline.memoryOps > 0) {
         score += memoryWeight_ * static_cast<double>(metrics.memoryOps) /
                  baseline.memoryOps;
+    } else if (metrics.memoryOps > 0) {
+        score += memoryWeight_ * (1.0 + static_cast<double>(metrics.memoryOps));
     }
 
     if (baseline.branchOps > 0) {
         score += branchWeight_ * static_cast<double>(metrics.branchOps) /
                  baseline.branchOps;
+    } else if (metrics.branchOps > 0) {
+        score += branchWeight_ * (1.0 + static_cast<double>(metrics.branchOps));
     }
 
     if (baseline.executionTimeMs > 0 && metrics.executionTimeMs > 0) {

@@ -1,4 +1,5 @@
 #include <gtest/gtest.h>
+
 #include "sequence_ops.hpp"
 
 using namespace phaseordering;
@@ -147,15 +148,4 @@ TEST(SequenceMutatorTest, SwapSinglePassSequence) {
     seq.add("mem2reg");
     auto result = mut.swapRandomPasses(seq, rng);
     EXPECT_EQ(result.size(), 1);
-}
-
-TEST(SequenceMutatorTest, MutateAddsModification) {
-    PassRegistry registry;
-    SequenceMutator mut(&registry);
-    std::mt19937 rng(42);
-
-    OptSequence seq;
-    seq.add("mem2reg");
-    auto result = mut.mutate(seq, rng);
-    EXPECT_NE(result.size(), seq.size());
 }

@@ -194,8 +194,8 @@ void Logger::printRuntimeComparison(double baselineMs,
     }
 }
 
-void Logger::printEvaluatonResult(int evalNum, const OptSequence& seq,
-                                  double score) const {
+void Logger::printEvaluationResult(int evalNum, const OptSequence& seq,
+                                   double score) const {
     if (!config_.printEachEvaluation) return;
 
     std::ostringstream oss;

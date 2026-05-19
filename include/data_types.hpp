@@ -6,6 +6,8 @@
 
 namespace phaseordering {
 
+constexpr int kMaxSequenceLength = 30;  // NOTE
+
 /** Type of search algorithm. */
 enum class AlgorithmType { RandomSearch, HillClimbing, SimulatedAnnealing };
 
@@ -51,7 +53,7 @@ class OptSequence {
 
    public:
     OptSequence() = default;
-    explicit OptSequence(const std::vector<std::string>& passes);
+    explicit OptSequence(const std::vector<std::string>& passes);  // NOTE
 
     /** Append a pass to the end of the sequence. */
     void add(const std::string& pass);
@@ -88,13 +90,14 @@ struct EvaluationResult {
 struct SolverConfig {
     std::string sourceFile;
     std::string inputIR;
-    int maxEvaluations = 100;
-    int sequenceLength = 5;
+    int maxEvaluations = 300;
+    int sequenceLength = 20;
     bool verbose = false;
     bool measureRuntime = false;
     bool measureRuntimeNative = false;
     std::string llvmBinPath;
-    AlgorithmType algorithmType = AlgorithmType::HillClimbing;
+    std::string cflags;
+    AlgorithmType algorithmType = AlgorithmType::SimulatedAnnealing;
     CostModelType costModelType = CostModelType::Weighted;
 };
 
@@ -124,7 +127,7 @@ struct AlgoContext {
     class IEvaluator* evaluator = nullptr;
     class ICostModel* costModel = nullptr;
     int maxEvaluations = 0;
-    int maxSequenceLength = 5;
+    int maxSequenceLength = 20;
     bool verbose = false;
 };
 

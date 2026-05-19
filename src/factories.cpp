@@ -7,13 +7,9 @@
 
 namespace phaseordering {
 
-namespace {
-static const int MAX_REASONABLE_SEQ_LEN = 30;
-}
-
 std::unique_ptr<IAlgorithm> AlgorithmFactory::create(
     AlgorithmType type, const SolverConfig& config) {
-    int cappedLen = std::min(config.sequenceLength, MAX_REASONABLE_SEQ_LEN);
+    int cappedLen = std::min(config.sequenceLength, kMaxSequenceLength);
     switch (type) {
         case AlgorithmType::RandomSearch:
             return std::make_unique<RandomSearch>(cappedLen, cappedLen);
@@ -41,6 +37,7 @@ std::unique_ptr<IEvaluator> EvaluatorFactory::create(
     const SolverConfig& config) {
     LLVMConfig llvmConfig;
     llvmConfig.llvmBinPath = config.llvmBinPath;
+    llvmConfig.extraClangFlags = config.cflags;
     LLVMFacade llvm(llvmConfig);
 
     IRAnalyzer analyzer;
