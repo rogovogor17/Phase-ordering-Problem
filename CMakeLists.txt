@@ -25,7 +25,10 @@ add_library(phaseordering_lib
     src/experiment_stats.cpp
 )
 
-target_include_directories(phaseordering_lib PUBLIC include)
+target_include_directories(phaseordering_lib PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+)
 target_link_libraries(phaseordering_lib PRIVATE Threads::Threads)
 
 add_executable(phaseordering src/main.cpp)
@@ -67,3 +70,20 @@ add_executable(phaseordering_bench
     benchmark/benchmark_main.cpp
 )
 target_link_libraries(phaseordering_bench PRIVATE phaseordering_lib benchmark::benchmark)
+
+include(GNUInstallDirs)
+
+install(TARGETS phaseordering_lib phaseordering
+    EXPORT phaseorderingTargets
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+)
+
+install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+
+install(EXPORT phaseorderingTargets
+    FILE phaseorderingTargets.cmake
+    NAMESPACE PhaseOrdering::
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/phaseordering
+)

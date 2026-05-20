@@ -1,2 +1,0 @@
-@self -I../include:
-	../src
