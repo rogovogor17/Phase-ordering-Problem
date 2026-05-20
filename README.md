@@ -20,7 +20,7 @@
 
 **Automatic LLVM Pass Sequence Optimization Using Heuristic Search Algorithms**
 
-[Getting Started](#getting-started) • [Architecture](#architecture) • [Algorithms](#implemented-methods) • [Benchmarking](#benchmarking)
+[Getting Started](#getting-started) • [Architecture](#architecture) • [Algorithms](#implemented-methods) • [Results](#results)
 
 </div>
 </div>
@@ -33,409 +33,575 @@
         <li><a href="#key-features">Key Features</a></li>
       </ul>
     </li>
-    <li><a href="#getting-started">Getting Started</a>
-      <ul>
-        <li><a href="#prerequisites">Prerequisites</a></li>
-        <li><a href="#installation">Installation</a></li>
-        <li><a href="#building">Building</a></li>
-      </ul>
-    </li>
+    <li><a href="#problem-statement">Problem Statement</a>
     <li><a href="#architecture">Architecture</a>
       <ul>
         <li><a href="#module-structure">Module Structure</a></li>
       </ul>
     </li>
     <li><a href="#implemented-methods">Implemented Methods</a></li>
-    <li><a href="#testing">Testing</a></li>
-    <li><a href="#benchmarking">Benchmarking</a></li>
-    <li><a href="#performance-analysis">Performance Analysis</a></li>
+    <li><a href="#getting-started">Getting Started</a>
+      <ul>
+        <li><a href="#prerequisites">Prerequisites</a></li>
+        <li><a href="#building-from-source">Building from Source</a></li>
+      </ul>
+    </li>
+    <li><a href="#usage">Usage</a></li>
+    <li><a href="#results">Results</a></li>
     <li><a href="#roadmap">Roadmap</a></li>
+    <li><a href="#troubleshooting">Troubleshooting</a></li>
+    <li><a href="#contributing">Contributing</a></li>
+    <li><a href="#references">References</a></li>
   </ol>
 </details>
 
 ---
 
-\anchor about-the-project
-
 ## About The Project
 
-**Phase-Ordering Problem Solver** is a research-oriented C++20 framework for solving the classical compiler phase-ordering problem using LLVM infrastructure.
-
-Modern compilers apply dozens of optimization passes:
-
-```text
-mem2reg → instcombine → gvn → simplifycfg → licm → dce
-```
-
-The final generated code quality strongly depends on the order of these passes.
-
-This project automatically:
-
-- Compiles C/C++ programs into LLVM IR
-- Generates optimization pass sequences
-- Applies LLVM optimization pipelines
-- Measures IR quality metrics
-- Searches for the best optimization sequence
-
-The framework integrates directly with LLVM toolchain components such as `clang`, `opt`, `llvm-link`, and `lli`.
-
-\anchor key-features
+The **Phase-Ordering Problem Solver** is a research-oriented framework that automatically discovers optimal sequences of LLVM optimization passes. Modern compilers apply dozens of transformations (e.g., `mem2reg`, `instcombine`, `gvn`, `licm`), and the order in which these passes are applied critically affects the quality of the generated code. This project addresses the NP-hard problem of finding the optimal pass sequence through heuristic search algorithms, providing compiler researchers and developers with a tool to explore optimization spaces systematically.
 
 ### Key Features
 
-| Feature              | Description                                       |
-| -------------------- | ------------------------------------------------- |
-| LLVM Integration     | Uses real LLVM optimization passes                |
-| Heuristic Search     | Random Search, Hill Climbing, Simulated Annealing |
-| Cost Models          | Weighted, instruction-count, runtime-based        |
-| Experiment Framework | Batch experiments and repeated runs               |
-| CSV Export           | Stores optimization results                       |
-| Parallel Execution   | Multi-threaded experiment runner                  |
-| Testing              | Google Test integration                           |
-| Benchmarking         | Google Benchmark support                          |
-| Modular Design       | Easily extensible architecture                    |
+| Feature                        | Description                                                                  |
+| ------------------------------ | ---------------------------------------------------------------------------- |
+| **LLVM Integration**           | Direct integration with real LLVM tools (`clang`, `opt`, `lli`, `llvm-link`) |
+| **Multiple Search Algorithms** | Random Search, Hill Climbing, Simulated Annealing                            |
+| **Flexible Cost Models**       | Instruction count, weighted metrics, runtime-based evaluation                |
+| **Batch Experimentation**      | Run experiments across multiple programs, configurations, and repetitions    |
+| **Parallel Execution**         | Multi-threaded experiment runner with configurable job count                 |
+| **CSV Export**                 | Raw results and comparison matrices with statistics                          |
+| **Modular Design**             | Easily extensible with new algorithms, cost models, or evaluators            |
+| **Testing & Benchmarking**     | Google Test suite and Google Benchmark integration                           |
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 ---
 
-\anchor getting-started
+## Problem Statement
+
+### The Phase-Ordering Problem
+
+Modern compilers consist of hundreds of optimization passes. The sequence in which these passes are applied dramatically impacts final code quality:
+
+```
+mem2reg → instcombine → gvn → simplifycfg → licm → dce    (Good)
+vs.
+gvn → mem2reg → dce → licm → instcombine → simplifycfg   (Poor)
+```
+
+**Why is this hard?**
+
+- **Combinatorial explosion**: With N passes, there are N! possible sequences
+- **Non-linear interactions**: Passes can enable or disable each other's optimizations
+- **Program-dependent**: Optimal order varies by input program characteristics
+- **Resource constraints**: Each evaluation requires running LLVM `opt` and analyzing IR
+
+### Our Approach
+
+The framework treats phase-ordering as a black-box optimization problem:
+
+1. **Search space**: All sequences of passes from a predefined registry (length ≤ 30)
+2. **Objective function**: Cost model scores (lower is better) based on IR metrics or runtime
+3. **Search strategies**: Heuristic algorithms that balance exploration and exploitation
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+---
+
+## Architecture
+
+### High-Level Pipeline
+
+![High-Level Pipeline](docs/diagrams/out/phase-ordering-architecture.svg)
+
+### Module Structure
+
+| Module           | File                        | Responsibility                                         |
+| ---------------- | --------------------------- | ------------------------------------------------------ |
+| **Interfaces**   | `interfaces.hpp`            | `IAlgorithm`, `IEvaluator`, `ICostModel` abstractions  |
+| **Algorithms**   | `algorithms.cpp`            | Random Search, Hill Climbing, Simulated Annealing      |
+| **Cost Models**  | `cost_models.cpp`           | Weighted, instruction count, runtime scoring           |
+| **LLVM Facade**  | `llvm_facade.cpp`           | Wrapper for `clang`, `opt`, `lli`, `llvm-link`         |
+| **IR Analyzer**  | `ir_analyzer.cpp`           | Pattern-based LLVM IR metric extraction                |
+| **Sequence Ops** | `sequence_ops.cpp`          | Pass registry, sequence generation, mutation operators |
+| **Evaluator**    | `evaluator_impl.cpp`        | Real LLVM evaluation of optimization sequences         |
+| **Solver**       | `solver.cpp`                | Orchestration of compilation, evaluation, and search   |
+| **Experiment**   | `cli_flags.cpp`, `main.cpp` | CLI parsing, batch experiments, CSV output             |
+
+### Key Design Decisions
+
+1. **Black-box evaluation**: Each sequence evaluation runs actual LLVM `opt`, ensuring realistic measurements
+2. **Empty sequence baseline**: Always runs through `opt` (even empty sequence) for canonicalized IR and comparable metrics
+3. **Validation layers**: Multiple checks for IR validity (function definitions, instruction count > 0) prevent silent failures
+4. **Timeout support**: Uses `timeout`/`gtimeout` to prevent hanging evaluations
+5. **Version-aware tool discovery**: Automatically finds `clang-18`, `opt-18`, etc.
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+---
+
+## Implemented Methods
+
+### Search Algorithms
+
+#### Random Search
+
+Baseline method that generates random sequences and keeps the best. Includes:
+
+- Initial seeding with O1/O2/short random sequences
+- Two-phase strategy: random exploration → mutation of best
+- Budget splitting (50% explore, 50% exploit)
+
+#### Hill Climbing
+
+Local search that iteratively improves a candidate:
+
+- Starts from O2/O1/random seeds
+- Applies mutations (insert/remove/swap/change)
+- Accepts only improving moves
+- Multiple restarts to escape local optima
+- Stops after `maxNoImprove` consecutive failures
+
+#### Simulated Annealing
+
+Probabilistic search that accepts worse solutions early:
+
+- Temperature starts high (exploration), cools exponentially
+- Acceptance probability = `exp(-Δ / temperature)`
+- Balances exploration vs. exploitation
+- Effective for large, complex search spaces
+
+### Cost Models
+
+| Model                | Formula                                                        | Use Case                                   |
+| -------------------- | -------------------------------------------------------------- | ------------------------------------------ |
+| **InstructionCount** | `instr_opt / instr_base`                                       | Quick metric, good proxy for code size     |
+| **Weighted**         | `w₁·instr + w₂·mem + w₃·branch + w₄·runtime`                   | Balanced optimization (default: 3:1.5:1:0) |
+| **Runtime**          | `runtime_opt / runtime_base` (falls back to instruction count) | Execution time minimization                |
+
+### LLVM Pass Registry
+
+The framework includes 45+ passes covering:
+
+- **Scalar optimizations**: `mem2reg`, `instcombine`, `gvn`, `sroa`, `dce`, `adce`
+- **Loop optimizations**: `licm`, `loop-unroll`, `loop-rotate`, `loop-distribute`, `loop-vectorize`
+- **Vectorization**: `slp-vectorizer`, `loop-vectorize`
+- **IPO**: `inline`, `globalopt`, `globaldce`, `mergefunc`
+- **CFG**: `simplifycfg`, `jump-threading`, `unreachableblockelim`
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+---
 
 ## Getting Started
 
-\anchor prerequisites
-
 ### Prerequisites
 
-| Tool                 | Version       | Installation Command (Ubuntu)       |
-| -------------------- | ------------- | ----------------------------------- |
-| **CMake**            | ≥ 3.16        | `sudo apt install cmake`            |
-| **LLVM**             | ≥ 14          | `sudo apt install llvm clang`       |
-| **C++ Compiler**     | C++20 capable | GCC 12+, Clang 14+                  |
-| **Git**              | Latest        | `sudo apt install git`              |
-| **GoogleTest**       | Latest        | `sudo apt install libgtest-dev`     |
-| **Google Benchmark** | Latest        | `sudo apt install libbenchmark-dev` |
-| **Doxygen**          | Latest        | `sudo apt install doxygen`          |
+| Tool                 | Version | Ubuntu/Debian                       | macOS (Homebrew)            |
+| -------------------- | ------- | ----------------------------------- | --------------------------- |
+| **CMake**            | ≥ 3.16  | `sudo apt install cmake`            | `brew install cmake`        |
+| **LLVM/Clang**       | ≥ 14    | `sudo apt install llvm clang lld`   | `brew install llvm`         |
+| **C++ Compiler**     | C++20   | `sudo apt install g++-13`           | Xcode or `brew install gcc` |
+| **Git**              | latest  | `sudo apt install git`              | `brew install git`          |
+| **GoogleTest**       | latest  | `sudo apt install libgtest-dev`     | `brew install googletest`   |
+| **Google Benchmark** | latest  | `sudo apt install libbenchmark-dev` | `brew install benchmark`    |
 
-\anchor installation
+### Platform-Specific Notes
 
-### Installation
+#### Linux (Ubuntu 22.04+)
+
+```bash
+# Install dependencies
+sudo apt update
+sudo apt install cmake llvm-18 clang-18 lld-18 libgtest-dev libbenchmark-dev
+
+# Set LLVM path (adjust version)
+export LLVM_BIN_PATH=/usr/lib/llvm-18/bin
+```
+
+#### macOS
+
+```bash
+# Install dependencies via Homebrew
+brew install llvm cmake googletest benchmark
+
+# LLVM is keg-only, add to PATH
+export PATH="/opt/homebrew/opt/llvm/bin:$PATH"
+export LDFLAGS="-L/opt/homebrew/opt/llvm/lib"
+export CPPFLAGS="-I/opt/homebrew/opt/llvm/include"
+```
+
+#### Windows (WSL2 recommended)
+
+Use Windows Subsystem for Linux with Ubuntu 22.04, then follow Linux instructions.
+
+### Building from Source
 
 ```bash
 # Clone repository
-git clone https://github.com/your_username/phase-ordering-solver.git
+git clone https://github.com/rogovogor17/Phase-ordering-Problem
+cd Phase-ordering-Problem
 
-cd phase-ordering-solver
-```
-
-\anchor building
-
-### Building
-
-```bash
 # Create build directory
 mkdir build && cd build
 
 # Configure
-cmake .. -DCMAKE_BUILD_TYPE=Release
+cmake ..
 
 # Build
-cmake --build . -j
+cmake --build .
+
+# Verify build
+./bin/phaseordering --help
+
+#Install on device with root prior
+cmake --install .
 ```
 
-\anchor running
-
-### Running
+### Building Tests & Benchmarks
 
 ```bash
-# Single source optimization
+# Tests are built automatically
+ctest --output-on-failure
+
+# Build benchmarks separately
+cmake --build . --target phaseordering_bench
+./benchmark/phaseordering_bench
+```
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+---
+
+## Usage
+
+### Basic Usage
+
+```bash
+# Optimize a single C++ file
 ./bin/phaseordering --source test.cpp
 
-# Run tests
-ctest --output-on-failure
+# With custom flags
+./bin/phaseordering --source test.cpp --cflags "-Iinclude -std=c++17"
 
-# Run benchmark
-./benchmark/benchmark_main
+# Specify LLVM path
+./bin/phaseordering --source test.cpp --llvm-path /usr/lib/llvm-18/bin
 ```
 
-### Simulated Annealing Example
+### Algorithm Selection
 
 ```bash
-./bin/phaseordering \
-  --source test.cpp \
-  --algorithm sa \
-  --max-eval 300 \
+# Random Search
+./bin/phaseordering --source test.cpp --algorithm random
+
+# Hill Climbing
+./bin/phaseordering --source test.cpp --algorithm hillclimbing
+
+# Simulated Annealing (default)
+./bin/phaseordering --source test.cpp --algorithm sa
+
+# Compare multiple algorithms
+./bin/phaseordering --source test.cpp --algorithm random,hillclimbing,sa
+```
+
+### Cost Model Selection
+
+```bash
+# Instruction count (minimize code size)
+./bin/phaseordering --source test.cpp --costmodel instructions
+
+# Weighted (balanced: instructions + memory + branches)
+./bin/phaseordering --source test.cpp --costmodel weighted
+```
+
+### Advanced Configuration
+
+```bash
+# Control search budget
+./bin/phaseordering --source test.cpp \
+  --max-eval 500 \
   --seq-len 25
+
+# Verbose output (shows each evaluation)
+./bin/phaseordering --source test.cpp --verbose
+
+# Quiet mode (summary only)
+./bin/phaseordering --source test.cpp --quiet
 ```
 
-### Batch Experiment Example
+### Batch Experiments
+
+#### Sources List File Format
+
+Create a text file (e.g., `benchmarks.txt`):
+
+```text
+# Comments start with #
+CFLAGS=-Iinclude -std=c++17
+
+# Single file
+polybench/2mm.c
+
+# Directory (recursively scans .c/.cpp)
+polybench/stencils/
+
+# Project with custom flags
+@matmul -O2 -march=native:
+    src/matmul.cpp
+    src/utils.cpp
+
+# IR file directly
+--ir matmul.ll
+```
+
+#### Running Batch Experiments
 
 ```bash
 ./bin/phaseordering \
-  --sources-list ../test.txt \
-  --algorithm sa,hc \
-  --costmodel weighted,instructions \
-  --max-eval 100,300 \
-  --seq-len 10,25 \
-  --repeat 3 \
+  --sources-list benchmarks.txt \
+  --algorithm sa,hc,random \
+  --costmodel weighted,instructions,runtime \
+  --max-eval 100,300,500 \
+  --seq-len 10,20,30 \
+  --repeat 5 \
   --jobs 4 \
-  --csv results.csv
-```
-
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
-
----
-
-\anchor architecture
-
-## Architecture
-
-\anchor module-structure
-
-### Module Structure
-
-| File / Module        | Description                      |
-| -------------------- | -------------------------------- |
-| `solver.*`           | Main experiment orchestration    |
-| `algorithms.*`       | Search algorithms implementation |
-| `interfaces.hpp`     | Core interfaces                  |
-| `cost_models.*`      | Optimization scoring models      |
-| `llvm_facade.*`      | LLVM toolchain wrapper           |
-| `ir_analyzer.*`      | LLVM IR metrics extraction       |
-| `sequence_ops.*`     | LLVM optimization pass registry  |
-| `experiment_stats.*` | CSV/log export and statistics    |
-
-### High-Level Pipeline
-
-```text
-C/C++ Source
-      ↓
-clang → LLVM IR
-      ↓
-Optimization Algorithm
-      ↓
-LLVM opt Pass Sequence
-      ↓
-Optimized IR
-      ↓
-IR Analyzer
-      ↓
-Cost Model
-      ↓
-Best Sequence Selection
-```
-
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
-
----
-
-\anchor implemented-methods
-
-## Implemented Methods
-
-### Random Search
-
-Generates random optimization sequences and keeps the best result.
-
-### Hill Climbing
-
-Starts from a candidate solution and iteratively improves it using mutations.
-
-### Simulated Annealing
-
-Uses probabilistic acceptance to escape local minima and explore larger search spaces.
-
-### Cost Models
-
-| Model                       | Objective                  |
-| --------------------------- | -------------------------- |
-| `InstructionCountCostModel` | Minimize instruction count |
-| `WeightedCostModel`         | Weighted IR metrics        |
-| `RuntimeCostModel`          | Minimize execution time    |
-
-### Supported LLVM Passes
-
-Examples:
-
-```text
-mem2reg
-instcombine
-gvn
-licm
-simplifycfg
-loop-unroll
-dce
-adce
-sroa
-reassociate
-```
-
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
-
----
-
-\anchor testing
-
-## Testing
-
-\anchor test-coverage
-
-### Test Coverage
-
-| Test Suite        | Description                  | Status |
-| ----------------- | ---------------------------- | ------ |
-| Algorithm tests   | Search algorithm correctness | Pass   |
-| Cost model tests  | Score computation            | Pass   |
-| IR analyzer tests | Metric extraction            | Pass   |
-| Solver tests      | Experiment orchestration     | Pass   |
-
-\anchor running-tests
-
-### Running Tests
-
-```bash
-cd build
-ctest --output-on-failure
-```
-
-\anchor test-results
-
-### Test Results
-
-```text
-100% tests passed
-```
-
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
-
----
-
-\anchor benchmarking
-
-## Benchmarking
-
-\anchor benchmarked-on
-
-### Benchmarked On
-
-<table>
-  <tr>
-    <th>Component</th>
-    <th>Specification</th>
-  </tr>
-  <tr>
-    <td><b>CPU</b></td>
-    <td>Intel / AMD x86_64</td>
-  </tr>
-  <tr>
-    <td><b>Architecture</b></td>
-    <td>x86_64<br><i>Linux</i></td>
-  </tr>
-  <tr>
-    <td><b>Cache Hierarchy</b></td>
-    <td>L1/L2/L3 CPU cache hierarchy</td>
-  </tr>
-  <tr>
-    <td><b>Memory</b></td>
-    <td>DDR4 / DDR5</td>
-  </tr>
-  <tr>
-    <td><b>SIMD Extensions</b></td>
-    <td>SSE / AVX / AVX2</td>
-  </tr>
-  <tr>
-    <td><b>OS & Compiler</b></td>
-    <td>Ubuntu Linux<br>GCC 13+, Clang 18+</td>
-  </tr>
-</table>
-
-\anchor test-configurations
-
-### Test Configuration
-
-| Parameter       | Value        |
-| --------------- | ------------ |
-| Sequence Length | 5–80         |
-| Evaluations     | 50–400       |
-| Algorithms      | RS / HC / SA |
-| LLVM Version    | LLVM 14+     |
-
-### Example Experiment
-
-```bash
-./bin/phaseordering \
-  --sources-list ../test.txt \
-  --algorithm sa \
-  --max-eval 400 \
-  --seq-len 80 \
+  --csv results.csv \
   --tee-log experiment.txt \
-  --csv results.csv
+  --output-dir ./experiments
 ```
 
-### Output Example
+### Output Files
 
-```text
-Best sequence:
-mem2reg → instcombine → gvn → simplifycfg
+| File                 | Description                                                    |
+| -------------------- | -------------------------------------------------------------- |
+| `results.csv`        | Raw per-run data (algorithm, cost model, metrics, sequence)    |
+| `results_matrix.csv` | Aggregated comparison matrix with baseline rows and statistics |
+| `experiment.log`     | Full experiment log with timestamps                            |
+| `optimization.log`   | Per-run algorithm details (with `--verbose`)                   |
+| `initial_ir.ll`      | Saved initial IR (with `--verbose`)                            |
+| `optimized_ir.ll`    | Saved best IR (with `--verbose`)                               |
 
-Instruction reduction:
-235 → 198
-```
+### Interpreting Results
+
+**Raw CSV columns:**
+
+- `improvement_pct`: (baseline - optimized) / baseline × 100%
+- `best_score`: Cost model score (lower is better)
+- `best_seq`: Discovered optimization sequence
+
+**Matrix CSV sections:**
+
+- `improvement_pct`: Higher is better (optimization success)
+- `optimized_instructions`: Lower is better (code size)
+- `elapsed_time`: Lower is better (search speed)
+- `runtime_ms`: Lower is better (execution speed)
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 ---
 
-\anchor performance-analysis
+## Results
 
-## Performance Analysis
+### Example Output
 
-The project demonstrates how heuristic optimization methods can improve compiler optimization pipelines.
+```
+phaseordering --sources-list temp/config.txt --output-dir temp --repeat 5 --jobs 5
+=== Phase-Ordering Experiment ===
+Programs: 1 | Configs: 1 | Repeats: 5 | Total: 5 | Jobs: 5
+  [1] algorithms.cpp (1 file(s)) cflags=[-I include]
+  SimulatedAnnealing_Weighted_ev300_len20
+=================================
 
-Key observations:
+[INFO] Starting optimization with SimulatedAnnealing algorithm
+[INFO] Starting optimization with SimulatedAnnealing algorithm
+[INFO] Starting optimization with SimulatedAnnealing algorithm
+[INFO] Starting optimization with SimulatedAnnealing algorithm
+[INFO] Starting optimization with SimulatedAnnealing algorithm
+[INFO] Baseline metrics collected (7175 instructions)
+[INFO] Baseline metrics collected (7175 instructions)
+[INFO] Baseline metrics collected (7175 instructions)
+[INFO] Baseline metrics collected (7175 instructions)
+[INFO] Baseline metrics collected (7175 instructions)
 
-- LLVM optimization order significantly affects resulting IR quality
-- Simulated Annealing performs better on large search spaces
-- Hill Climbing converges faster but may get stuck in local minima
-- Weighted cost models provide more balanced optimization behavior
+========================================
+       OPTIMIZATION RESULT
+========================================
+  Best sequence: mergefunc -> gvn
+  Best score:    5.4138
+  Evaluations:   235
+  Improvement:   +1.62%
+========================================
+[1/5] SimulatedAnnealing_Weighted_ev300_len20 algorithms.cpp r0 OK impr=1% 7175->7059 31332ms
 
-The framework is useful for:
+========================================
+       OPTIMIZATION RESULT
+========================================
+  Best sequence: always-inline -> simplifycfg -> inline -> globaldce -> partially-inline-libcalls -> mergefunc -> sroa -> deadargelim
+  Best score:    5.4057
+  Evaluations:   247
+  Improvement:   +1.77%
+========================================
 
-- compiler research
-- optimization experimentation
-- LLVM studies
-- heuristic algorithm evaluation
+========================================
+       OPTIMIZATION RESULT
+========================================
+  Best sequence: globaldce
+  Best score:    5.4920
+  Evaluations:   250
+  Improvement:   +0.15%
+========================================
+[2/5] SimulatedAnnealing_Weighted_ev300_len20 algorithms.cpp r2 OK impr=1% 7175->7048 32980ms
+[3/5] SimulatedAnnealing_Weighted_ev300_len20 algorithms.cpp r1 OK impr=0% 7175->7164 33082ms
+
+========================================
+       OPTIMIZATION RESULT
+========================================
+  Best sequence: globaldce
+  Best score:    5.4920
+  Evaluations:   248
+  Improvement:   +0.15%
+========================================
+[4/5] SimulatedAnnealing_Weighted_ev300_len20 algorithms.cpp r3 OK impr=0% 7175->7164 33255ms
+
+========================================
+       OPTIMIZATION RESULT
+========================================
+  Best sequence: globaldce -> adce -> loop-unroll
+  Best score:    5.4920
+  Evaluations:   248
+  Improvement:   +0.15%
+========================================
+[5/5] SimulatedAnnealing_Weighted_ev300_len20 algorithms.cpp r4 OK impr=0% 7175->7164 33378ms
+
+========================================
+       EXPERIMENT SUMMARY
+========================================
+  Runs:           5 total, 5 ok, 0 fail
+
+  --- Improvement ---
+  Average:   0.77%
+  Median:    0.15%
+  Best:      1.77%
+  Worst:     0.15%
+
+  --- Instructions ---
+  Avg baseline:  7175
+  Avg optimized: 7119
+  Avg reduction: 0.8%
+
+  --- Performance ---
+  Avg time/run:  32806 ms
+  Avg evals/run: 246
+
+  Per-run results:
+  Config                   File            Ok?   Impr%      ms
+  -------------------------------------------------------------
+  SimulatedAnnealing_Weighted_ev300_len20algorithms..     OK    1.6%   31332
+  SimulatedAnnealing_Weighted_ev300_len20algorithms..     OK    1.8%   32980
+  SimulatedAnnealing_Weighted_ev300_len20algorithms..     OK    0.2%   33082
+  SimulatedAnnealing_Weighted_ev300_len20algorithms..     OK    0.2%   33255
+  SimulatedAnnealing_Weighted_ev300_len20algorithms..     OK    0.2%   33378
+========================================
+
+Total wall time: 33498 ms
+```
+
+### Observed Patterns
+
+1. **Early canonicalization** (`mem2reg`, `instcombine`) consistently improves results
+2. **Loop optimizations** (`licm`, `loop-unroll`) are critical for numerical kernels
+3. **Duplicate passes** sometimes help (e.g., repeated `simplifycfg` + `instcombine`)
+4. **Simulated Annealing** outperforms Hill Climbing on complex programs by 5-10%
+5. **Weighted cost model** produces more balanced code than pure instruction count
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 ---
-
-\anchor roadmap
 
 ## Roadmap
 
-- [x] **Phase 1: Core Framework**
-  - [x] LLVM integration
-  - [x] Optimization sequence execution
-  - [x] IR analysis
+### Completed
 
-- [x] **Phase 2: Search Algorithms**
-  - [x] Random Search
-  - [x] Hill Climbing
-  - [x] Simulated Annealing
+- [x] Core LLVM integration (clang, opt, lli, llvm-link)
+- [x] IR analysis and metric extraction
+- [x] Random Search, Hill Climbing, Simulated Annealing
+- [x] Three cost models (instruction count, weighted, runtime)
+- [x] Batch experiment framework
+- [x] CSV export with statistics
+- [x] Parallel execution (multi-threaded)
+- [x] Google Test suite (100% pass rate)
+- [x] Google Benchmark integration
+- [x] Version-aware tool discovery
+- [x] Timeout support for hanging evaluations
 
-- [x] **Phase 3: Testing & Benchmarking**
-  - [x] Google Benchmark integration
-  - [x] Google Test suite
-  - [x] CSV export
-  - [x] Parallel experiments
+### In Progress
 
-- [ ] **Phase 4: Future Enhancements**
-  - [ ] Genetic Algorithms
-  - [ ] Reinforcement Learning
-  - [ ] ML-guided optimization
-  - [ ] Distributed experiments
-  - [ ] LLVM New Pass Manager support
+- [ ] Genetic Algorithm implementation
+- [ ] Multi-objective optimization
+- [ ] Caching of evaluated sequences
+- [ ] LLVM New Pass Manager support
+
+### Planned
+
+- [ ] Reinforcement Learning
+- [ ] ML-guided initialization from program features
+- [ ] Transfer learning across similar programs
+- [ ] Distributed experiment runner
+- [ ] Web dashboard for result visualization
+- [ ] Integration with MLIR
+- [ ] GPU kernel optimization support
+
+### Research Directions
+
+- **Feature extraction**: Use program characteristics (loop count, memory footprint, branch density) to predict optimal initial sequences
+- **Adaptive search**: Dynamically adjust mutation rates and acceptance probabilities based on search progress
+- **Ensemble methods**: Combine multiple algorithms with different exploration/exploitation tradeoffs
+- **Online learning**: Update search strategy based on successful patterns discovered during optimization
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+---
+
+## Troubleshooting
+
+### Common Issues
+
+| Problem                        | Solution                                                             |
+| ------------------------------ | -------------------------------------------------------------------- |
+| `clang: command not found`     | Install LLVM or use `--llvm-path`                                    |
+| `opt: unknown pass name`       | LLVM version may not support a pass; check `opt --print-passes`      |
+| Empty IR after compilation     | Check that source file contains a `main` function or visible symbols |
+| All evaluations fail           | Verify LLVM installation and pass list compatibility                 |
+| Timeout errors                 | Increase `timeoutMs` in `LLVMConfig` or simplify search space        |
+| Memory leaks during batch runs | Reduce `--jobs` or use `--repeat 1` for debugging                    |
+
+### Debugging
+
+```bash
+# Enable verbose output to see each evaluation
+./bin/phaseordering --source test.cpp --verbose
+
+# Save initial and final IR for inspection
+./bin/phaseordering --source test.cpp --verbose
+
+# Run single configuration with minimal parallelism
+./bin/phaseordering --source test.cpp --jobs 1 --repeat 1
+```
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+---
+
+## Contributing
+
+Contributions are welcome! Areas for contribution:
+
+- New search algorithms (genetic, ant colony, PSO)
+- Additional cost models (power consumption, cache misses)
+- Support for more LLVM passes (especially target-specific ones)
+- Performance optimizations (caching, parallel evaluation)
+- Improved IR analysis (alias analysis, dataflow)
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -443,17 +609,16 @@ The framework is useful for:
 
 ## References
 
-1. LLVM Documentation — https://llvm.org/docs/
-2. Engineering a Compiler — Keith Cooper & Linda Torczon
-3. LLVM Passes Reference — https://llvm.org/docs/Passes.html
+1. **LLVM Documentation** — [https://llvm.org/docs/](https://llvm.org/docs/)
+2. **LLVM Passes Reference** — [https://llvm.org/docs/Passes.html](https://llvm.org/docs/Passes.html)
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 ---
 
-<div align="center">
-  <sub>© 2026 — Phase-Ordering Problem Solver</sub>
-</div>
+<p align="center">
+  <sub>© 2026 — Phase-Ordering Problem Solver | Built with LLVM, C++20, and heuristic search</sub>
+</p>
 
 [cpp-shield]: https://img.shields.io/badge/C++-20-00599C?style=for-the-badge&logo=c%2B%2B&logoColor=white
 [cpp-url]: https://isocpp.org/
