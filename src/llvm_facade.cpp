@@ -8,6 +8,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <iomanip>
 #include <sstream>
 #include <vector>
 
@@ -17,22 +18,67 @@
     #include <unistd.h>
 #endif
 
+#ifdef __APPLE__
+    #include <AvailabilityMacros.h>
+#endif
+
 namespace phaseordering {
 
 namespace fs = std::filesystem;
 
 void LLVMConfig::resolvePaths() {
     if (!llvmBinPath.empty()) {
-        fs::path binDir(llvmBinPath);
+        std::string dirStr = llvmBinPath;
+
+        // Remove trailing slashes so path concatenation doesn't produce
+        // double slashes (e.g. "/path//clang").
+        while (!dirStr.empty() &&
+               (dirStr.back() == '/' || dirStr.back() == '\\')) {
+            dirStr.pop_back();
+        }
+
+        // If the path looks like a binary (contains an executable name),
+        // take the parent directory. We check common binary patterns:
+        // ends with "clang", "clang-*", "opt", "opt-*", "lli", "lli-*"
+        // or contains a dot (Windows .exe/.bat etc).
+        fs::path p(dirStr);
+        std::string filename = p.filename().string();
+        bool looksLikeBinary = false;
+
+        if (filename.find('.') != std::string::npos) {
+            // Has an extension (like .exe) — likely a binary
+            looksLikeBinary = true;
+        } else {
+            // Check if filename matches known tool names (possibly versioned)
+            static const std::vector<std::string> toolPrefixes = {
+                "clang", "opt", "lli", "llvm-link"};
+            for (const auto& prefix : toolPrefixes) {
+                if (filename == prefix ||
+                    filename.rfind(prefix + "-", 0) == 0) {
+                    looksLikeBinary = true;
+                    break;
+                }
+            }
+        }
+
+        if (looksLikeBinary) {
+            dirStr = p.parent_path().string();
+        }
+
+        fs::path binDir(dirStr);
 
 #ifdef _WIN32
         if (clangPath.empty()) clangPath = (binDir / "clang.exe").string();
         if (optPath.empty()) optPath = (binDir / "opt.exe").string();
         if (lliPath.empty()) lliPath = (binDir / "lli.exe").string();
+        if (llvmLinkPath.empty())
+            llvmLinkPath = (binDir / "llvm-link.exe").string();
 #else
         if (clangPath.empty()) clangPath = (binDir / "clang").string();
         if (optPath.empty()) optPath = (binDir / "opt").string();
         if (lliPath.empty()) lliPath = (binDir / "lli").string();
+        if (llvmLinkPath.empty())
+            llvmLinkPath = (binDir / "llvm-link").string();
 #endif
     }
 }
@@ -40,7 +86,7 @@ void LLVMConfig::resolvePaths() {
 static std::vector<std::string> getVersionedNames(const std::string& baseTool) {
     std::vector<std::string> names;
     names.push_back(baseTool);
-    for (int v = 20; v >= 14; --v) {
+    for (int v = 25; v >= 14; --v) {
         names.push_back(baseTool + "-" + std::to_string(v));
     }
     return names;
@@ -76,8 +122,43 @@ LLVMFacade::LLVMFacade(const LLVMConfig& config) : config_(config) {
             }
         }
     }
+    if (config_.llvmLinkPath.empty()) {
+        for (const auto& name : getVersionedNames("llvm-link")) {
+            std::string found = findTool(name);
+            if (!found.empty()) {
+                config_.llvmLinkPath = found;
+                break;
+            }
+        }
+    }
 
     available_ = !config_.clangPath.empty() && !config_.optPath.empty();
+
+    // Detect timeout command availability.
+    // On Linux: "timeout" (coreutils)
+    // On macOS: "gtimeout" (GNU coreutils via Homebrew) or nothing
+    // On Windows: not used (we skip timeout)
+#ifdef _WIN32
+    timeoutCmd_ = "";
+#else
+    timeoutCmd_ = findTool("timeout");
+    if (timeoutCmd_.empty()) {
+        // On macOS with GNU coreutils installed via Homebrew
+        timeoutCmd_ = findTool("gtimeout");
+    }
+#endif
+}
+
+std::string LLVMFacade::buildTimeoutPrefix() const {
+    if (timeoutCmd_.empty()) return "";
+
+    double seconds = static_cast<double>(config_.timeoutMs) / 1000.0;
+    if (seconds < 1.0) seconds = 1.0;
+
+    std::ostringstream oss;
+    oss << timeoutCmd_ << " " << std::fixed << std::setprecision(1) << seconds
+        << " ";
+    return oss.str();
 }
 
 std::string LLVMFacade::compileToIR(const std::string& sourceFile) const {
@@ -91,15 +172,20 @@ std::string LLVMFacade::compileToIR(const std::string& sourceFile) const {
     std::string tempOutput = writeTempFile("", ".ll");
 
     std::ostringstream cmd;
-    cmd << "\"" << config_.clangPath << "\" -S -emit-llvm -O0 \"" << sourceFile
-        << "\" -o \"" << tempOutput << "\" 2>&1";
+    cmd << buildTimeoutPrefix() << "\"" << config_.clangPath
+        << "\" -S -emit-llvm -O0";
+    if (!config_.extraClangFlags.empty()) {
+        cmd << " " << config_.extraClangFlags;
+    }
+    cmd << " \"" << sourceFile << "\" -o \"" << tempOutput << "\" 2>&1";
 
+    std::string cmdStr = cmd.str();
     int exitCode = 0;
-    std::string output = executeCommand(cmd.str(), &exitCode);
+    std::string output = executeCommand(cmdStr, &exitCode);
 
     if (exitCode != 0) {
         lastError_ = "clang failed (exit code " + std::to_string(exitCode) +
-                     "): " + output;
+                     "): " + output + "  CMD: " + cmdStr;
         removeTempFile(tempOutput);
         return "";
     }
@@ -117,9 +203,76 @@ std::string LLVMFacade::compileToIR(const std::string& sourceFile) const {
 
     if (ir.empty()) {
         lastError_ = "Compiled IR is empty";
+        return "";
+    }
+
+    if (ir.find("define ") == std::string::npos) {
+        lastError_ =
+            "Compiled IR contains no function definitions (empty or "
+            "header-only source?)";
+        return "";
     }
 
     return ir;
+}
+
+std::string LLVMFacade::linkModules(
+    const std::vector<std::string>& irModules) const {
+    lastError_.clear();
+
+    if (irModules.size() <= 1) {
+        return irModules.empty() ? "" : irModules[0];
+    }
+
+    if (config_.llvmLinkPath.empty()) {
+        lastError_ = "llvm-link not found. Install LLVM or use --llvm-path";
+        return "";
+    }
+
+    std::vector<std::string> tempFiles;
+    std::string tempOutput = writeTempFile("", ".ll");
+
+    for (size_t i = 0; i < irModules.size(); ++i) {
+        std::string tmp = writeTempFile(irModules[i], ".ll");
+        tempFiles.push_back(tmp);
+    }
+
+    std::ostringstream cmd;
+    cmd << buildTimeoutPrefix() << "\"" << config_.llvmLinkPath << "\" -S";
+    for (const auto& tf : tempFiles) {
+        cmd << " \"" << tf << "\"";
+    }
+    cmd << " -o \"" << tempOutput << "\" 2>&1";
+
+    int exitCode = 0;
+    std::string output = executeCommand(cmd.str(), &exitCode);
+
+    for (const auto& tf : tempFiles) removeTempFile(tf);
+
+    if (exitCode != 0) {
+        lastError_ = "llvm-link failed (exit code " + std::to_string(exitCode) +
+                     "): " + output;
+        removeTempFile(tempOutput);
+        return "";
+    }
+
+    std::ifstream file(tempOutput);
+    if (!file.is_open()) {
+        lastError_ = "Failed to open linked IR file: " + tempOutput;
+        removeTempFile(tempOutput);
+        return "";
+    }
+    std::string linked((std::istreambuf_iterator<char>(file)),
+                       std::istreambuf_iterator<char>());
+    file.close();
+    removeTempFile(tempOutput);
+
+    if (linked.empty()) {
+        lastError_ = "llvm-link produced empty output";
+        return "";
+    }
+
+    return linked;
 }
 
 std::string LLVMFacade::applyPasses(const std::string& ir,
@@ -131,53 +284,32 @@ std::string LLVMFacade::applyPasses(const std::string& ir,
         return "";
     }
 
-    if (seq.empty()) {
-        return ir;
-    }
-
     std::string passList;
-    const auto& passes = seq.passes();
-
-    for (size_t i = 0; i < passes.size(); ++i) {
-        if (!passList.empty()) passList += ",";
-        passList += passes[i];
-    }
-
-    // Hard cap: prevent absurdly long pass lists that would cause timeout
-    static const int MAX_PASSES = 30;
-    int count = 0;
-    std::string cappedList;
-    for (size_t i = 0; i < passList.size();) {
-        size_t comma = passList.find(',', i);
-        std::string token = (comma == std::string::npos)
-                                ? passList.substr(i)
-                                : passList.substr(i, comma - i);
-        if (!cappedList.empty()) cappedList += ",";
-        cappedList += token;
-        count++;
-        if (count >= MAX_PASSES) break;
-        if (comma == std::string::npos) break;
-        i = comma + 1;
-    }
-    passList = cappedList;
-
-    // If all passes were duplicates of an empty list, return original
-    if (passList.empty()) {
-        return ir;
+    if (!seq.empty()) {
+        const auto& passes = seq.passes();
+        int count = 0;
+        for (const auto& p : passes) {
+            if (count >= kMaxSequenceLength) break;
+            if (!passList.empty()) passList += ",";
+            passList += p;
+            ++count;
+        }
     }
 
     std::string tempInput = writeTempFile(ir, ".ll");
     std::string tempOutput = writeTempFile("", ".ll");
 
     std::ostringstream cmd;
-#ifdef _WIN32
-    cmd << "\"" << config_.optPath << "\" -passes=\"" << passList << "\" \""
-        << tempInput << "\" -S -o \"" << tempOutput << "\" 2>&1";
-#else
-    cmd << "timeout " << (config_.timeoutMs / 1000) << " \"" << config_.optPath
-        << "\" -passes=\"" << passList << "\" \"" << tempInput << "\" -S -o \""
-        << tempOutput << "\" 2>&1";
-#endif
+    std::string timeoutPrefix = buildTimeoutPrefix();
+
+    if (passList.empty()) {
+        cmd << timeoutPrefix << "\"" << config_.optPath << "\" -passes=\"\" \""
+            << tempInput << "\" -S -o \"" << tempOutput << "\" 2>&1";
+    } else {
+        cmd << timeoutPrefix << "\"" << config_.optPath << "\" -passes=\""
+            << passList << "\" \"" << tempInput << "\" -S -o \"" << tempOutput
+            << "\" 2>&1";
+    }
 
     int exitCode = 0;
     std::string output = executeCommand(cmd.str(), &exitCode);
@@ -204,6 +336,12 @@ std::string LLVMFacade::applyPasses(const std::string& ir,
     removeTempFile(tempInput);
     removeTempFile(tempOutput);
 
+    if (result.empty()) {
+        lastError_ =
+            "opt produced empty output for pass list: [" + passList + "]";
+        return "";
+    }
+
     return result;
 }
 
@@ -223,8 +361,8 @@ std::string LLVMFacade::compileToNative(const std::string& ir) const {
 #endif
 
     std::ostringstream cmd;
-    cmd << "\"" << config_.clangPath << "\" \"" << tempIR << "\" -o \""
-        << tempExe << "\" 2>&1";
+    cmd << buildTimeoutPrefix() << "\"" << config_.clangPath << "\" \""
+        << tempIR << "\" -o \"" << tempExe << "\" 2>&1";
 
     int exitCode = 0;
     std::string output = executeCommand(cmd.str(), &exitCode);
@@ -251,7 +389,8 @@ double LLVMFacade::runInterpreter(const std::string& ir) const {
     std::string tempIR = writeTempFile(ir, ".ll");
 
     std::ostringstream cmd;
-    cmd << "\"" << config_.lliPath << "\" \"" << tempIR << "\" 2>&1";
+    cmd << buildTimeoutPrefix() << "\"" << config_.lliPath << "\" \"" << tempIR
+        << "\" 2>&1";
 
 #ifndef _WIN32
     struct tms startTms;
@@ -270,6 +409,11 @@ double LLVMFacade::runInterpreter(const std::string& ir) const {
     double elapsedMs = (endTms.tms_cutime - startTms.tms_cutime +
                         endTms.tms_cstime - startTms.tms_cstime) *
                        1000.0 / clk;
+    if (elapsedMs <= 0.0) {
+        elapsedMs =
+            std::chrono::duration<double, std::milli>(endWall - startWall)
+                .count();
+    }
 #else
     double elapsedMs =
         std::chrono::duration<double, std::milli>(endWall - startWall).count();
@@ -293,7 +437,7 @@ double LLVMFacade::runNative(const std::string& executablePath) const {
     auto startWall = std::chrono::high_resolution_clock::now();
 
     std::ostringstream cmd;
-    cmd << "\"" << executablePath << "\" 2>&1";
+    cmd << buildTimeoutPrefix() << "\"" << executablePath << "\" 2>&1";
 
     int exitCode = 0;
     executeCommand(cmd.str(), &exitCode);
@@ -305,6 +449,11 @@ double LLVMFacade::runNative(const std::string& executablePath) const {
     double elapsedMs = (endTms.tms_cutime - startTms.tms_cutime +
                         endTms.tms_cstime - startTms.tms_cstime) *
                        1000.0 / clk;
+    if (elapsedMs <= 0.0) {
+        elapsedMs =
+            std::chrono::duration<double, std::milli>(endWall - startWall)
+                .count();
+    }
 #else
     double elapsedMs =
         std::chrono::duration<double, std::milli>(endWall - startWall).count();
@@ -330,8 +479,9 @@ bool LLVMFacade::verifyIR(const std::string& ir) const {
     std::string tempOut = writeTempFile("", ".ll");
 
     std::ostringstream cmd;
-    cmd << "\"" << config_.optPath << "\" -passes=verify \"" << tempIR
-        << "\" -S -o \"" << tempOut << "\" 2>&1";
+    cmd << buildTimeoutPrefix() << "\"" << config_.optPath
+        << "\" -passes=verify \"" << tempIR << "\" -S -o \"" << tempOut
+        << "\" 2>&1";
 
     int exitCode = 0;
     executeCommand(cmd.str(), &exitCode);
@@ -351,6 +501,8 @@ std::string LLVMFacade::getOptPath() const { return config_.optPath; }
 
 std::string LLVMFacade::getLliPath() const { return config_.lliPath; }
 
+namespace {
+
 int decodeExitCode(int rawCode) {
 #ifdef _WIN32
     return rawCode;
@@ -361,6 +513,8 @@ int decodeExitCode(int rawCode) {
     return -1;
 #endif
 }
+
+}  // anonymous namespace
 
 std::string LLVMFacade::executeCommand(const std::string& command,
                                        int* exitCode) const {
@@ -397,7 +551,7 @@ std::string LLVMFacade::executeCommand(const std::string& command,
 
 std::string LLVMFacade::writeTempFile(const std::string& content,
                                       const std::string& suffix) const {
-    static std::atomic<int> counter{0};
+    static std::atomic<int> counter{0};  // NOTE
     std::string tempPath = std::filesystem::temp_directory_path().string()
 #ifdef _WIN32
                            + "\\phaseordering_"

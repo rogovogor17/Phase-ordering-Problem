@@ -1,63 +1,89 @@
 #include "algorithms.hpp"
-#include "sequence_ops.hpp"
-#include <random>
-#include <sstream>
-#include <iomanip>
+
 #include <algorithm>
 #include <cmath>
+#include <iomanip>
+#include <random>
+#include <sstream>
+
+#include "data_types.hpp"
+#include "sequence_ops.hpp"
 
 namespace phaseordering {
 
-// 
-// RandomSearch: try random sequences, keep the best one
-// 
-
+/*
+ * RandomSearch: try random sequences, keep the best one
+ */
 RandomSearch::RandomSearch(int sequenceLength, int maxSequenceLength)
-    : sequenceLength_(sequenceLength)
-    , maxSequenceLength_(maxSequenceLength)
-    , registry_(std::make_unique<PassRegistry>())
-    , generator_(std::make_unique<SequenceGenerator>(registry_.get())) {}
+    : sequenceLength_(sequenceLength),
+      maxSequenceLength_(maxSequenceLength),
+      registry_(std::make_unique<PassRegistry>()),
+      generator_(std::make_unique<SequenceGenerator>(registry_.get())) {}
 
 AlgoResult RandomSearch::run(const AlgoContext& ctx) {
     std::random_device rd;
     std::mt19937 rng(rd());
 
-    static const int MAX_REASONABLE_LEN = 20;
+    // Validate context before doing anything.
+    if (!ctx.evaluator || !ctx.costModel) {
+        AlgoResult fail;
+        fail.bestScore = 1e9;
+        fail.log = "Invalid context: evaluator or cost model is null\n";
+        return fail;
+    }
+    if (ctx.maxEvaluations <= 0) {
+        AlgoResult fail;
+        fail.bestScore = 1e9;
+        fail.log = "Invalid context: maxEvaluations must be > 0\n";
+        return fail;
+    }
+
+    static const int MAX_REASONABLE_LEN = kMaxSequenceLength;
     int effectiveLen = ctx.maxSequenceLength > 0
-        ? std::min({sequenceLength_, ctx.maxSequenceLength, MAX_REASONABLE_LEN})
-        : std::min(sequenceLength_, MAX_REASONABLE_LEN);
+                           ? std::min({sequenceLength_, ctx.maxSequenceLength,
+                                       MAX_REASONABLE_LEN})
+                           : std::min(sequenceLength_, MAX_REASONABLE_LEN);
     int len = std::max(1, effectiveLen);
 
+    // bestScore must start at sentinel so any real score wins.
+    // The empty-sequence "win" bug happened partly because bestScore was
+    // initialized to 1e9 and empty sequence score was also 1e9 — when we
+    // accidentally fed a raw IR that scored 1.0 it would win over everything.
     OptSequence bestSequence;
-    double bestScore = 1e9;
+    double bestScore = std::numeric_limits<double>::max();
     IRMetrics bestMetrics;
     std::ostringstream log;
 
+    // Try known-good starting points (O2, O1, short random)
     OptSequence candidates[] = {
-        generator_->generateO2(),
-        generator_->generateO1(),
-        generator_->generateRandom(std::min(3, len), rng)
-    };
+        generator_->generateO2(), generator_->generateO1(),
+        generator_->generateRandom(std::min(3, len), rng)};
 
     for (auto& candidate : candidates) {
+        if (candidate.empty()) continue;
+
         EvaluationResult eval = ctx.evaluator->evaluate(candidate);
-        if (eval.success && eval.metrics.totalInstructions > 0) {
-            double score = ctx.costModel->score(eval.metrics, ctx.baselineMetrics);
-            if (score < 1e8 && ctx.costModel->isBetter(score, bestScore)) {
-                bestSequence = candidate;
-                bestScore = score;
-                bestMetrics = eval.metrics;
-            }
+        if (!eval.success) continue;
+        if (eval.metrics.totalInstructions <= 0) continue;
+
+        double score = ctx.costModel->score(eval.metrics, ctx.baselineMetrics);
+        if (score >= 1e8) continue;
+
+        if (bestSequence.empty() || ctx.costModel->isBetter(score, bestScore)) {
+            bestSequence = candidate;
+            bestScore = score;
+            bestMetrics = eval.metrics;
         }
     }
 
     int attempts = 0;
     int successes = 0;
+
     if (!bestSequence.empty()) {
         successes = 1;
-        log << "[1] Start: score=" << std::fixed << std::setprecision(4) << bestScore
-            << " len=" << bestSequence.size()
-            << " seq=[" << bestSequence.toString() << "]\n";
+        log << "[1] Start: score=" << std::fixed << std::setprecision(4)
+            << bestScore << " len=" << bestSequence.size() << " seq=["
+            << bestSequence.toString() << "]\n";
     }
 
     // Phase 1: random exploration (50% of budget)
@@ -66,21 +92,24 @@ AlgoResult RandomSearch::run(const AlgoContext& ctx) {
         attempts++;
         int tryLen = 3 + (rng() % std::max(1, len - 3 + 1));
         OptSequence candidate = generator_->generateRandom(tryLen, rng);
-        EvaluationResult evalResult = ctx.evaluator->evaluate(candidate);
 
+        if (candidate.empty()) continue;
+
+        EvaluationResult evalResult = ctx.evaluator->evaluate(candidate);
         if (!evalResult.success) continue;
         if (evalResult.metrics.totalInstructions <= 0) continue;
 
-        double score = ctx.costModel->score(evalResult.metrics, ctx.baselineMetrics);
+        double score =
+            ctx.costModel->score(evalResult.metrics, ctx.baselineMetrics);
         if (score >= 1e8) continue;
 
         successes++;
-        if (ctx.costModel->isBetter(score, bestScore)) {
+        if (bestSequence.empty() || ctx.costModel->isBetter(score, bestScore)) {
             bestScore = score;
             bestSequence = candidate;
             bestMetrics = evalResult.metrics;
-            log << "[" << successes << "] score=" << std::fixed << std::setprecision(4) << score
-                << " len=" << candidate.size()
+            log << "[" << successes << "] score=" << std::fixed
+                << std::setprecision(4) << score << " len=" << candidate.size()
                 << " seq=[" << candidate.toString() << "]\n";
         }
     }
@@ -91,15 +120,19 @@ AlgoResult RandomSearch::run(const AlgoContext& ctx) {
         OptSequence current = bestSequence;
         double currentScore = bestScore;
 
-        for (int i = 0; i < randomBudget && attempts < ctx.maxEvaluations; ++i) {
+        for (int i = 0; i < randomBudget && attempts < ctx.maxEvaluations;
+             ++i) {
             attempts++;
             OptSequence neighbor = mutator.mutate(current, rng);
-            EvaluationResult evalResult = ctx.evaluator->evaluate(neighbor);
 
+            if (neighbor.empty()) continue;
+
+            EvaluationResult evalResult = ctx.evaluator->evaluate(neighbor);
             if (!evalResult.success) continue;
             if (evalResult.metrics.totalInstructions <= 0) continue;
 
-            double score = ctx.costModel->score(evalResult.metrics, ctx.baselineMetrics);
+            double score =
+                ctx.costModel->score(evalResult.metrics, ctx.baselineMetrics);
             if (score >= 1e8) continue;
 
             successes++;
@@ -110,16 +143,22 @@ AlgoResult RandomSearch::run(const AlgoContext& ctx) {
                     bestScore = score;
                     bestSequence = neighbor;
                     bestMetrics = evalResult.metrics;
-                    log << "[" << successes << "] score=" << std::fixed << std::setprecision(4) << score
-                        << " len=" << neighbor.size()
-                        << " seq=[" << neighbor.toString() << "]\n";
+                    log << "[" << successes << "] score=" << std::fixed
+                        << std::setprecision(4) << score
+                        << " len=" << neighbor.size() << " seq=["
+                        << neighbor.toString() << "]\n";
                 }
             }
         }
     }
 
-    if (successes == 0) {
-        log << "No successful evaluations out of " << attempts << " attempts\n";
+    // Distinguish "all evaluations failed" from "no improvement found".
+    // Previously an empty bestSequence was returned silently.
+    if (bestSequence.empty()) {
+        log << "ERROR: No successful evaluations out of " << attempts
+            << " attempts — all pass sequences failed or produced invalid IR.\n"
+            << "Check that the input IR is valid and LLVM opt is working "
+               "correctly.\n";
     } else {
         log << "Best: score=" << std::fixed << std::setprecision(4) << bestScore
             << " (" << successes << "/" << attempts << " ok)\n";
@@ -128,33 +167,47 @@ AlgoResult RandomSearch::run(const AlgoContext& ctx) {
     AlgoResult result;
     result.bestSequence = bestSequence;
     result.bestMetrics = bestMetrics;
-    result.bestScore = bestScore;
+    result.bestScore = bestSequence.empty() ? 1e9 : bestScore;
     result.evaluationsUsed = successes;
     result.improvementRatio = 0.0;
     result.log = log.str();
     return result;
 }
 
-// 
-// HillClimbing: start from a good sequence, mutate to improve
-// 
-
+/*
+ * HillClimbing: start from a good sequence, mutate to improve
+ */
 HillClimbing::HillClimbing(int maxNoImprove, int maxSequenceLength)
-    : maxNoImprove_(maxNoImprove)
-    , maxSequenceLength_(maxSequenceLength)
-    , registry_(std::make_unique<PassRegistry>())
-    , generator_(std::make_unique<SequenceGenerator>(registry_.get()))
-    , mutator_(std::make_unique<SequenceMutator>(registry_.get(), maxSequenceLength)) {}
+    : maxNoImprove_(maxNoImprove),
+      maxSequenceLength_(maxSequenceLength),
+      registry_(std::make_unique<PassRegistry>()),
+      generator_(std::make_unique<SequenceGenerator>(registry_.get())),
+      mutator_(std::make_unique<SequenceMutator>(registry_.get(),
+                                                 maxSequenceLength)) {}
 
 AlgoResult HillClimbing::run(const AlgoContext& ctx) {
     std::random_device rd;
     std::mt19937 rng(rd());
 
-    int effectiveMaxNoImprove = std::max(30, std::min(maxNoImprove_, ctx.maxEvaluations / 4));
+    if (!ctx.evaluator || !ctx.costModel) {
+        AlgoResult fail;
+        fail.bestScore = 1e9;
+        fail.log = "Invalid context: evaluator or cost model is null\n";
+        return fail;
+    }
+    if (ctx.maxEvaluations <= 0) {
+        AlgoResult fail;
+        fail.bestScore = 1e9;
+        fail.log = "Invalid context: maxEvaluations must be > 0\n";
+        return fail;
+    }
+
+    int effectiveMaxNoImprove =
+        std::max(30, std::min(maxNoImprove_, ctx.maxEvaluations / 4));
     static const int MAX_RESTARTS = 3;
 
     OptSequence bestSequence;
-    double bestScore = 1e9;
+    double bestScore = std::numeric_limits<double>::max();
     IRMetrics bestMetrics;
     int totalAttempts = 0;
     int successes = 0;
@@ -162,63 +215,77 @@ AlgoResult HillClimbing::run(const AlgoContext& ctx) {
     int restarts = 0;
 
     while (totalAttempts < ctx.maxEvaluations && restarts <= MAX_RESTARTS) {
-        // Try known good starting points on first iteration, random on restarts
         OptSequence current;
-        double currentScore = 1e9;
+        double currentScore = std::numeric_limits<double>::max();
         IRMetrics currentMetrics;
 
         if (restarts == 0) {
-            OptSequence candidates[] = {
-                generator_->generateO2(),
-                generator_->generateO1(),
-                generator_->generateRandom(3, rng)
-            };
+            // Try known good starting points
+            OptSequence candidates[] = {generator_->generateO2(),
+                                        generator_->generateO1(),
+                                        generator_->generateRandom(3, rng)};
             for (auto& candidate : candidates) {
+                if (candidate.empty()) continue;
                 EvaluationResult eval = ctx.evaluator->evaluate(candidate);
-                if (eval.success && eval.metrics.totalInstructions > 0) {
-                    double score = ctx.costModel->score(eval.metrics, ctx.baselineMetrics);
-                    if (score < 1e8 && ctx.costModel->isBetter(score, currentScore)) {
-                        current = candidate;
-                        currentScore = score;
-                        currentMetrics = eval.metrics;
-                    }
+                if (!eval.success) continue;
+                if (eval.metrics.totalInstructions <= 0) continue;
+                double score =
+                    ctx.costModel->score(eval.metrics, ctx.baselineMetrics);
+                if (score >= 1e8) continue;
+                if (current.empty() ||
+                    ctx.costModel->isBetter(score, currentScore)) {
+                    current = candidate;
+                    currentScore = score;
+                    currentMetrics = eval.metrics;
                 }
             }
             if (current.empty()) {
+                // Return a meaningful failure result, not a bare default
                 AlgoResult failResult;
                 failResult.bestScore = 1e9;
-                failResult.log = "All starting sequences failed\n";
+                failResult.evaluationsUsed = 0;
+                failResult.log =
+                    "All starting sequences failed to evaluate.\n"
+                    "The input IR may be invalid or LLVM opt may not support "
+                    "the requested passes.\n";
                 return failResult;
             }
             bestSequence = current;
             bestScore = currentScore;
             bestMetrics = currentMetrics;
-            log << "Start: score=" << std::fixed << std::setprecision(4) << currentScore
-                << " len=" << current.size()
-                << " seq=[" << current.toString() << "]\n";
+            log << "Start: score=" << std::fixed << std::setprecision(4)
+                << currentScore << " len=" << current.size() << " seq=["
+                << current.toString() << "]\n";
         } else {
-            // Restart: shake the best sequence by applying multiple random mutations
+            // Restart: perturb the best sequence with random mutations
             current = bestSequence;
             for (int shake = 0; shake < 5; ++shake) {
-                current = mutator_->mutate(current, rng);
+                OptSequence shaken = mutator_->mutate(current, rng);
+                if (!shaken.empty()) current = shaken;
             }
             EvaluationResult eval = ctx.evaluator->evaluate(current);
             if (eval.success && eval.metrics.totalInstructions > 0) {
-                currentScore = ctx.costModel->score(eval.metrics, ctx.baselineMetrics);
-                if (currentScore < 1e8) {
+                double score =
+                    ctx.costModel->score(eval.metrics, ctx.baselineMetrics);
+                if (score < 1e8) {
+                    currentScore = score;
                     currentMetrics = eval.metrics;
                 }
             }
             if (currentScore >= 1e8) {
-                // Restart failed, generate random instead
+                // Perturbed restart failed; try a fully random sequence
                 OptSequence randomSeq = generator_->generateRandom(
                     std::max(3, std::min(10, ctx.maxSequenceLength)), rng);
-                EvaluationResult eval2 = ctx.evaluator->evaluate(randomSeq);
-                if (eval2.success && eval2.metrics.totalInstructions > 0) {
-                    currentScore = ctx.costModel->score(eval2.metrics, ctx.baselineMetrics);
-                    if (currentScore < 1e8) {
-                        current = randomSeq;
-                        currentMetrics = eval2.metrics;
+                if (!randomSeq.empty()) {
+                    EvaluationResult eval2 = ctx.evaluator->evaluate(randomSeq);
+                    if (eval2.success && eval2.metrics.totalInstructions > 0) {
+                        double score2 = ctx.costModel->score(
+                            eval2.metrics, ctx.baselineMetrics);
+                        if (score2 < 1e8) {
+                            current = randomSeq;
+                            currentScore = score2;
+                            currentMetrics = eval2.metrics;
+                        }
                     }
                 }
             }
@@ -231,14 +298,21 @@ AlgoResult HillClimbing::run(const AlgoContext& ctx) {
                 bestSequence = current;
                 bestMetrics = currentMetrics;
             }
-            log << "[Restart " << restarts << "] score=" << std::fixed << std::setprecision(4)
-                << currentScore << " len=" << current.size() << "\n";
+            log << "[Restart " << restarts << "] score=" << std::fixed
+                << std::setprecision(4) << currentScore
+                << " len=" << current.size() << "\n";
         }
 
         int noImproveCount = 0;
-        while (noImproveCount < effectiveMaxNoImprove && totalAttempts < ctx.maxEvaluations) {
+        while (noImproveCount < effectiveMaxNoImprove &&
+               totalAttempts < ctx.maxEvaluations) {
             OptSequence neighbor = mutator_->mutate(current, rng);
             totalAttempts++;
+
+            if (neighbor.empty()) {
+                noImproveCount++;
+                continue;
+            }
 
             EvaluationResult evalResult = ctx.evaluator->evaluate(neighbor);
             if (!evalResult.success) {
@@ -249,7 +323,9 @@ AlgoResult HillClimbing::run(const AlgoContext& ctx) {
                 noImproveCount++;
                 continue;
             }
-            double neighborScore = ctx.costModel->score(evalResult.metrics, ctx.baselineMetrics);
+
+            double neighborScore =
+                ctx.costModel->score(evalResult.metrics, ctx.baselineMetrics);
             if (neighborScore >= 1e8) {
                 noImproveCount++;
                 continue;
@@ -267,16 +343,27 @@ AlgoResult HillClimbing::run(const AlgoContext& ctx) {
                     bestSequence = neighbor;
                     bestScore = neighborScore;
                     bestMetrics = evalResult.metrics;
-                    log << "[" << successes << "] New best: score=" << std::fixed
+                    log << "[" << successes
+                        << "] New best: score=" << std::fixed
                         << std::setprecision(4) << bestScore
-                        << " len=" << neighbor.size()
-                        << " seq=[" << neighbor.toString() << "]\n";
+                        << " len=" << neighbor.size() << " seq=["
+                        << neighbor.toString() << "]\n";
                 }
             } else {
                 noImproveCount++;
             }
         }
         restarts++;
+    }
+
+    if (bestSequence.empty()) {
+        log << "ERROR: Hill climbing failed to find any valid non-empty "
+               "sequence.\n";
+        AlgoResult fail;
+        fail.bestScore = 1e9;
+        fail.evaluationsUsed = 0;
+        fail.log = log.str();
+        return fail;
     }
 
     log << "Best: score=" << std::fixed << std::setprecision(4) << bestScore
@@ -293,53 +380,81 @@ AlgoResult HillClimbing::run(const AlgoContext& ctx) {
     return result;
 }
 
-// 
-// SimulatedAnnealing: like hill climbing but can accept worse
-// solutions with decreasing probability
-// 
-
-SimulatedAnnealing::SimulatedAnnealing(double startTemperature, double coolingRate, int maxSequenceLength)
-    : startTemperature_(startTemperature)
-    , coolingRate_(coolingRate)
-    , maxSequenceLength_(maxSequenceLength)
-    , registry_(std::make_unique<PassRegistry>())
-    , generator_(std::make_unique<SequenceGenerator>(registry_.get()))
-    , mutator_(std::make_unique<SequenceMutator>(registry_.get(), maxSequenceLength)) {}
+/*
+ * SimulatedAnnealing
+ */
+SimulatedAnnealing::SimulatedAnnealing(double startTemperature,
+                                       double coolingRate,
+                                       int maxSequenceLength)
+    : startTemperature_(startTemperature),
+      coolingRate_(coolingRate),
+      maxSequenceLength_(maxSequenceLength),
+      registry_(std::make_unique<PassRegistry>()),
+      generator_(std::make_unique<SequenceGenerator>(registry_.get())),
+      mutator_(std::make_unique<SequenceMutator>(registry_.get(),
+                                                 maxSequenceLength)) {}
 
 AlgoResult SimulatedAnnealing::run(const AlgoContext& ctx) {
     std::random_device rd;
     std::mt19937 rng(rd());
     std::uniform_real_distribution<double> probDist(0.0, 1.0);
 
-    // Start from a known good sequence
+    if (!ctx.evaluator || !ctx.costModel) {
+        AlgoResult fail;
+        fail.bestScore = 1e9;
+        fail.log = "Invalid context: evaluator or cost model is null\n";
+        return fail;
+    }
+    if (ctx.maxEvaluations <= 0) {
+        AlgoResult fail;
+        fail.bestScore = 1e9;
+        fail.log = "Invalid context: maxEvaluations must be > 0\n";
+        return fail;
+    }
+
+    if (startTemperature_ <= 0.0 || coolingRate_ <= 0.0 ||
+        coolingRate_ >= 1.0) {
+        AlgoResult fail;
+        fail.bestScore = 1e9;
+        fail.log =
+            "Invalid SA parameters: startTemperature must be > 0, "
+            "coolingRate must be in (0, 1)\n";
+        return fail;
+    }
+
     OptSequence current;
-    double currentScore = 1e9;
+    double currentScore = std::numeric_limits<double>::max();
     IRMetrics currentMetrics;
 
     OptSequence candidates[] = {
-        generator_->generateO2(),
-        generator_->generateO1(),
+        generator_->generateO2(), generator_->generateO1(),
         generator_->generateRandom(
-            std::min(3, ctx.maxSequenceLength > 0 ? ctx.maxSequenceLength : 3), rng)
-    };
+            std::min(3, ctx.maxSequenceLength > 0 ? ctx.maxSequenceLength : 3),
+            rng)};
 
     for (auto& candidate : candidates) {
+        if (candidate.empty()) continue;
         EvaluationResult eval = ctx.evaluator->evaluate(candidate);
-        if (eval.success && eval.metrics.totalInstructions > 0) {
-            double score = ctx.costModel->score(eval.metrics, ctx.baselineMetrics);
-            if (score < 1e8 && ctx.costModel->isBetter(score, currentScore)) {
-                current = candidate;
-                currentScore = score;
-                currentMetrics = eval.metrics;
-            }
+        if (!eval.success) continue;
+        if (eval.metrics.totalInstructions <= 0) continue;
+        double score = ctx.costModel->score(eval.metrics, ctx.baselineMetrics);
+        if (score >= 1e8) continue;
+        if (current.empty() || ctx.costModel->isBetter(score, currentScore)) {
+            current = candidate;
+            currentScore = score;
+            currentMetrics = eval.metrics;
         }
     }
 
     if (current.empty()) {
-        AlgoResult result;
-        result.bestScore = 1e9;
-        result.log = "All starting sequences failed\n";
-        return result;
+        AlgoResult fail;
+        fail.bestScore = 1e9;
+        fail.evaluationsUsed = 0;
+        fail.log =
+            "All starting sequences failed to evaluate.\n"
+            "The input IR may be invalid or LLVM opt may not support "
+            "the requested passes.\n";
+        return fail;
     }
 
     OptSequence bestSequence = current;
@@ -352,26 +467,33 @@ AlgoResult SimulatedAnnealing::run(const AlgoContext& ctx) {
     std::ostringstream log;
 
     log << "Start: score=" << std::fixed << std::setprecision(4) << currentScore
-        << " len=" << current.size()
-        << " seq=[" << current.toString() << "]\n";
+        << " len=" << current.size() << " seq=[" << current.toString() << "]\n";
 
     while (totalAttempts < ctx.maxEvaluations && temperature > 0.01) {
         for (int i = 0; i < 5 && totalAttempts < ctx.maxEvaluations; ++i) {
             OptSequence neighbor = mutator_->mutate(current, rng);
             totalAttempts++;
 
+            if (neighbor.empty()) continue;
+
             EvaluationResult evalResult = ctx.evaluator->evaluate(neighbor);
             if (!evalResult.success) continue;
-
             if (evalResult.metrics.totalInstructions <= 0) continue;
 
-            double neighborScore = ctx.costModel->score(evalResult.metrics, ctx.baselineMetrics);
+            double neighborScore =
+                ctx.costModel->score(evalResult.metrics, ctx.baselineMetrics);
             if (neighborScore >= 1e8) continue;
 
             successes++;
 
             double delta = neighborScore - currentScore;
-            if (delta < 0 || probDist(rng) < std::exp(-delta / temperature)) {
+            // Only accept worse solutions if current temperature is
+            // meaningful. When delta < 0, it's strictly better — always accept.
+            bool accept =
+                (delta < 0) || (temperature > 1e-10 &&
+                                probDist(rng) < std::exp(-delta / temperature));
+
+            if (accept) {
                 current = neighbor;
                 currentScore = neighborScore;
                 currentMetrics = evalResult.metrics;
@@ -380,13 +502,25 @@ AlgoResult SimulatedAnnealing::run(const AlgoContext& ctx) {
                     bestSequence = neighbor;
                     bestScore = neighborScore;
                     bestMetrics = evalResult.metrics;
-                    log << "[" << successes << "] New best: score=" << std::fixed << std::setprecision(4)
-                        << bestScore << " len=" << neighbor.size()
-                        << " seq=[" << neighbor.toString() << "]\n";
+                    log << "[" << successes
+                        << "] New best: score=" << std::fixed
+                        << std::setprecision(4) << bestScore
+                        << " len=" << neighbor.size() << " seq=["
+                        << neighbor.toString() << "]\n";
                 }
             }
         }
         temperature *= coolingRate_;
+    }
+
+    if (bestSequence.empty()) {
+        log << "ERROR: Simulated annealing failed to find any valid non-empty "
+               "sequence.\n";
+        AlgoResult fail;
+        fail.bestScore = 1e9;
+        fail.evaluationsUsed = 0;
+        fail.log = log.str();
+        return fail;
     }
 
     log << "Best: score=" << std::fixed << std::setprecision(4) << bestScore
@@ -402,4 +536,4 @@ AlgoResult SimulatedAnnealing::run(const AlgoContext& ctx) {
     return result;
 }
 
-} // namespace phaseordering
+}  // namespace phaseordering

@@ -12,9 +12,12 @@ struct LLVMConfig {
     std::string clangPath;
     std::string optPath;
     std::string lliPath;
+    std::string llvmLinkPath;
     int timeoutMs = 30000;
+    std::string extraClangFlags;
 
-    /** Resolve clang/opt/lli from llvmBinPath if not set explicitly. */
+    /** Resolve clang/opt/lli/llvm-link from llvmBinPath if not set explicitly.
+     */
     void resolvePaths();
 };
 
@@ -32,14 +35,18 @@ class LLVMFacade {
    private:
     LLVMConfig config_;
     bool available_ = false;
-    mutable std::string lastError_;
+    mutable std::string lastError_;  // NOTE
+    std::string timeoutCmd_;
 
    public:
-    explicit LLVMFacade(const LLVMConfig& config = LLVMConfig{});
+    explicit LLVMFacade(const LLVMConfig& config = LLVMConfig{});  // NOTE
 
     /** Compile a C/C++ source file to LLVM IR. Returns empty string on failure.
      */
     std::string compileToIR(const std::string& sourceFile) const;
+    /** Link multiple IR modules into one using llvm-link. Returns empty string
+     * on failure. */
+    std::string linkModules(const std::vector<std::string>& irModules) const;
     /** Apply an optimization sequence to IR. Returns empty string on failure.
      */
     std::string applyPasses(const std::string& ir,
@@ -71,6 +78,7 @@ class LLVMFacade {
     std::string writeTempFile(const std::string& content,
                               const std::string& suffix) const;
     std::string findTool(const std::string& toolName) const;
+    std::string buildTimeoutPrefix() const;
 };
 
 }  // namespace phaseordering

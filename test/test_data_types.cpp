@@ -1,17 +1,22 @@
 #include <gtest/gtest.h>
+
 #include "data_types.hpp"
 
 using namespace phaseordering;
 
 TEST(AlgorithmTypeTest, ToString) {
-    EXPECT_EQ(algorithmTypeToString(AlgorithmType::RandomSearch), "RandomSearch");
-    EXPECT_EQ(algorithmTypeToString(AlgorithmType::HillClimbing), "HillClimbing");
-    EXPECT_EQ(algorithmTypeToString(AlgorithmType::SimulatedAnnealing), "SimulatedAnnealing");
+    EXPECT_EQ(algorithmTypeToString(AlgorithmType::RandomSearch),
+              "RandomSearch");
+    EXPECT_EQ(algorithmTypeToString(AlgorithmType::HillClimbing),
+              "HillClimbing");
+    EXPECT_EQ(algorithmTypeToString(AlgorithmType::SimulatedAnnealing),
+              "SimulatedAnnealing");
 }
 
 TEST(CostModelTypeTest, ToString) {
     EXPECT_EQ(costModelTypeToString(CostModelType::Weighted), "Weighted");
-    EXPECT_EQ(costModelTypeToString(CostModelType::InstructionCount), "InstructionCount");
+    EXPECT_EQ(costModelTypeToString(CostModelType::InstructionCount),
+              "InstructionCount");
     EXPECT_EQ(costModelTypeToString(CostModelType::Runtime), "Runtime");
 }
 
@@ -89,11 +94,11 @@ TEST(IRMetricsTest, ToString) {
 
 TEST(SolverConfigTest, DefaultValues) {
     SolverConfig config;
-    EXPECT_EQ(config.maxEvaluations, 100);
-    EXPECT_EQ(config.sequenceLength, 5);
+    EXPECT_EQ(config.maxEvaluations, 300);
+    EXPECT_EQ(config.sequenceLength, 20);
     EXPECT_FALSE(config.verbose);
     EXPECT_FALSE(config.measureRuntime);
-    EXPECT_EQ(config.algorithmType, AlgorithmType::HillClimbing);
+    EXPECT_EQ(config.algorithmType, AlgorithmType::SimulatedAnnealing);
     EXPECT_EQ(config.costModelType, CostModelType::Weighted);
 }
 

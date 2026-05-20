@@ -26,15 +26,15 @@ class IRAnalyzer {
     IRMetrics analyze(const std::string& ir) const;
 
    private:
-    int countOccurrences(const std::string& ir,
+    int countOccurrences(const std::string& text,
                          const std::string& pattern) const;
     int countInstructions(const std::string& ir) const;
     int countBasicBlocks(const std::string& ir) const;
     int countFunctions(const std::string& ir) const;
-    int countMemoryOps(const std::string& ir) const;
-    int countBranchOps(const std::string& ir) const;
-    int countCallOps(const std::string& ir) const;
-    int countArithmeticOps(const std::string& ir) const;
+    int countMemoryOps(const std::string& instrText) const;
+    int countBranchOps(const std::string& instrText) const;
+    int countCallOps(const std::string& instrText) const;
+    int countArithmeticOps(const std::string& instrText) const;
 };
 
 }  // namespace phaseordering

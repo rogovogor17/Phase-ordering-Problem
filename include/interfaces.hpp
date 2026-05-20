@@ -14,7 +14,7 @@ namespace phaseordering {
  * @see RandomSearch, HillClimbing, SimulatedAnnealing
  */
 class IAlgorithm {
-public:
+   public:
     virtual ~IAlgorithm() = default;
 
     /**
@@ -28,14 +28,13 @@ public:
 /**
  * Abstraction for evaluating an optimization sequence.
  *
- * An algorithm asks: "How good is this sequence?"
  * It does not know how LLVM passes are executed,
  * how IR is parsed, or how runtime is measured.
  *
  * @see LLVMEvaluator
  */
 class IEvaluator {
-public:
+   public:
     virtual ~IEvaluator() = default;
 
     /**
@@ -56,7 +55,7 @@ public:
  * @see WeightedCostModel, InstructionCountCostModel, RuntimeCostModel
  */
 class ICostModel {
-public:
+   public:
     virtual ~ICostModel() = default;
 
     /**
@@ -66,7 +65,8 @@ public:
      * @param baseline Baseline (unoptimized) metrics.
      * @return Numeric score (lower = better).
      */
-    virtual double score(const IRMetrics& metrics, const IRMetrics& baseline) = 0;
+    virtual double score(const IRMetrics& metrics,
+                         const IRMetrics& baseline) = 0;
 
     /**
      * Compare two scores.
@@ -75,4 +75,4 @@ public:
     virtual bool isBetter(double a, double b) = 0;
 };
 
-} // namespace phaseordering
+}  // namespace phaseordering

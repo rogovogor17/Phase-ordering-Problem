@@ -1,10 +1,11 @@
 #pragma once
 
-#include "interfaces.hpp"
-#include "llvm_facade.hpp"
-#include "ir_analyzer.hpp"
-#include <string>
 #include <memory>
+#include <string>
+
+#include "interfaces.hpp"
+#include "ir_analyzer.hpp"
+#include "llvm_facade.hpp"
 
 namespace phaseordering {
 
@@ -18,25 +19,27 @@ namespace phaseordering {
  * @see IEvaluator
  */
 class LLVMEvaluator : public IEvaluator {
-private:
+   private:
     LLVMFacade llvm_;
     IRAnalyzer analyzer_;
     std::string sourceIR_;
     bool measureRuntime_;
-public:
+
+   public:
     /**
      * @param sourceIR LLVM IR of the unoptimized program.
      * @param llvm Configured LLVMFacade instance.
      * @param analyzer IRAnalyzer for metrics extraction.
-     * @param measureRuntime If true, also measure lli execution time.
+     * @param measureRuntime If true, also measure LLVM IR execution time.
      */
     LLVMEvaluator(const std::string& sourceIR, LLVMFacade llvm,
-                 IRAnalyzer analyzer, bool measureRuntime = false);
+                  IRAnalyzer analyzer, bool measureRuntime = false);
 
     EvaluationResult evaluate(const OptSequence& seq) override;
 
     LLVMFacade& getLLVMFacade();
     const LLVMFacade& getLLVMFacade() const;
+    const std::string& getSourceIR() const;
 };
 
-} // namespace phaseordering
+}  // namespace phaseordering

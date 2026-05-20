@@ -12,24 +12,50 @@ find_package(Threads REQUIRED)
 
 add_library(phaseordering_lib
     src/data_types.cpp
-    # src/logging.cpp
+    src/logging.cpp
     src/sequence_ops.cpp
     src/ir_analyzer.cpp
     src/llvm_facade.cpp
-    # src/evaluator_impl.cpp
-    # src/algorithms.cpp
-    # src/cost_models.cpp
-    # src/factories.cpp
+    src/evaluator_impl.cpp
+    src/algorithms.cpp
+    src/cost_models.cpp
+    src/factories.cpp
     src/solver.cpp
+    src/cli_flags.cpp
+    src/experiment_stats.cpp
 )
 
-target_include_directories(phaseordering_lib PUBLIC include)
+target_include_directories(phaseordering_lib PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+)
 target_link_libraries(phaseordering_lib PRIVATE Threads::Threads)
 
 add_executable(phaseordering src/main.cpp)
 target_link_libraries(phaseordering PRIVATE phaseordering_lib)
 
 include(FetchContent)
+
+FetchContent_Declare(
+    googletest
+    GIT_REPOSITORY https://github.com/google/googletest.git
+    GIT_TAG v1.14.0
+)
+set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+FetchContent_MakeAvailable(googletest)
+
+enable_testing()
+
+add_executable(phaseordering_test
+    test/test_data_types.cpp
+    test/test_sequence_ops.cpp
+    test/test_algorithms.cpp
+    test/test_cost_models.cpp
+    test/test_solver.cpp
+    test/test_ir_analyzer.cpp
+)
+target_link_libraries(phaseordering_test PRIVATE phaseordering_lib GTest::gtest_main)
+add_test(NAME phaseordering_test COMMAND phaseordering_test)
 
 FetchContent_Declare(
     googlebenchmark
@@ -44,3 +70,20 @@ add_executable(phaseordering_bench
     benchmark/benchmark_main.cpp
 )
 target_link_libraries(phaseordering_bench PRIVATE phaseordering_lib benchmark::benchmark)
+
+include(GNUInstallDirs)
+
+install(TARGETS phaseordering_lib phaseordering
+    EXPORT phaseorderingTargets
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+)
+
+install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+
+install(EXPORT phaseorderingTargets
+    FILE phaseorderingTargets.cmake
+    NAMESPACE PhaseOrdering::
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/phaseordering
+)

@@ -1,8 +1,9 @@
 #pragma once
 
-#include "interfaces.hpp"
-#include "data_types.hpp"
 #include <memory>
+
+#include "data_types.hpp"
+#include "interfaces.hpp"
 
 namespace phaseordering {
 
@@ -14,7 +15,7 @@ namespace phaseordering {
  * @see IAlgorithm
  */
 class AlgorithmFactory {
-public:
+   public:
     static std::unique_ptr<IAlgorithm> create(AlgorithmType type,
                                               const SolverConfig& config);
 };
@@ -25,7 +26,7 @@ public:
  * @see ICostModel
  */
 class CostModelFactory {
-public:
+   public:
     static std::unique_ptr<ICostModel> create(CostModelType type);
 };
 
@@ -38,8 +39,8 @@ public:
  * @see IEvaluator, LLVMEvaluator
  */
 class EvaluatorFactory {
-public:
+   public:
     static std::unique_ptr<IEvaluator> create(const SolverConfig& config);
 };
 
-} // namespace phaseordering
+}  // namespace phaseordering
