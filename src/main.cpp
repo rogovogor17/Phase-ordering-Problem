@@ -42,7 +42,7 @@ static std::string compileProgram(const ProgramInput& prog,
         if (ir.empty()) {
             std::cerr << "[compileProgram] FAILED: " << srcFile << "\n  "
                       << llvm.getLastError() << "\n";
-            return "";
+            continue;
         }
         irModules.push_back(ir);
     }
